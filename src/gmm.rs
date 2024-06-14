@@ -26,16 +26,20 @@ fn argmax<S: Data<Elem = f32>>(v: &ArrayBase<S, Ix1>) -> usize {
     i
 }
 
+/// Returns a tuple of two elements: the centers, the assignment, and the radius.
+/// The centers array is a vector of indices into the input data.
+/// The assignment is a vector of indices into the centers array,
+/// with the same length as there are input rows.
 pub fn greedy_minimum_maximum<S: Data<Elem = f32>>(
     data: &ArrayBase<S, Ix2>,
     k: usize,
-) -> (Array1<usize>, Array1<usize>) {
+) -> (Array1<usize>, Array1<usize>, Array1<f32>) {
     let n = data.shape()[0];
     if n <= k {
         // Each point is its own center
         let centers = Array1::<usize>::from_iter(0..n);
         let assignment = Array1::<usize>::from_iter(0..n);
-        return (centers, assignment);
+        return (centers, assignment, Array1::<f32>::zeros(n));
     }
 
     let sq_norms = compute_sq_norms(data);
@@ -72,5 +76,11 @@ pub fn greedy_minimum_maximum<S: Data<Elem = f32>>(
         }
     }
 
-    (centers, assignment)
+    let mut radii: Array1<f32> = Array1::zeros(k);
+
+    for i in 0..n {
+        radii[assignment[i]] = radii[assignment[i]].max(distances[i]);
+    }
+
+    (centers, assignment, radii)
 }
