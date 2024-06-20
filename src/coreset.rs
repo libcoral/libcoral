@@ -1,4 +1,4 @@
-use ndarray::{prelude::*, Data};
+use ndarray::{concatenate, prelude::*, Data};
 
 pub trait AncillaryData: Sized {
     type Weights: Clone;
@@ -15,10 +15,36 @@ impl AncillaryData for () {
     }
 }
 
+pub trait Compose {
+    fn compose(a: Self, b: Self) -> Self;
+}
+
+impl<T: Copy> Compose for Array1<T> {
+    fn compose(a: Self, b: Self) -> Self {
+        concatenate![Axis(0), a, b]
+    }
+}
+
+impl<T: Copy> Compose for Array2<T> {
+    fn compose(a: Self, b: Self) -> Self {
+        concatenate![Axis(0), a, b]
+    }
+}
+
 struct CoresetFit<W> {
     coreset_points: Array2<f32>,
     radius: Array1<f32>,
     weights: W,
+}
+
+impl<W: Compose> Compose for CoresetFit<W> {
+    fn compose(a: Self, b: Self) -> Self {
+        Self {
+            coreset_points: Compose::compose(a.coreset_points, b.coreset_points),
+            radius: Compose::compose(a.radius, b.radius),
+            weights: Compose::compose(a.weights, b.weights),
+        }
+    }
 }
 
 pub struct Coreset<A>
@@ -77,3 +103,21 @@ where
     }
 }
 
+impl<A> Compose for Coreset<A>
+where
+    A: AncillaryData,
+    A::Weights: Compose,
+{
+    fn compose(a: Self, b: Self) -> Self {
+        let coreset_fit = match (a.coreset_fit, b.coreset_fit) {
+            (Some(afit), Some(bfit)) => Some(Compose::compose(afit, bfit)),
+            (None, Some(bfit)) => Some(bfit),
+            (Some(afit), None) => Some(afit),
+            (None, None) => None,
+        };
+        Self {
+            tau: a.tau + b.tau,
+            coreset_fit,
+        }
+    }
+}
