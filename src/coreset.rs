@@ -1,4 +1,4 @@
-use ndarray::{concatenate, prelude::*, Data};
+use ndarray::{concatenate, iter::AxisChunksIter, prelude::*, Data};
 
 pub trait AncillaryData: Sized {
     type Weights: Clone;
@@ -31,6 +31,7 @@ impl<T: Copy> Compose for Array2<T> {
     }
 }
 
+#[derive(Clone)]
 struct CoresetFit<W> {
     coreset_points: Array2<f32>,
     radius: Array1<f32>,
@@ -47,9 +48,11 @@ impl<W: Compose> Compose for CoresetFit<W> {
     }
 }
 
+#[derive(Clone)]
 pub struct Coreset<A>
 where
-    A: AncillaryData,
+    A: AncillaryData + Clone,
+    A::Weights: Clone,
 {
     /// the size of the coreset, i.e. the number of proxy
     /// points to be selected
@@ -60,7 +63,8 @@ where
 
 impl<A> Coreset<A>
 where
-    A: AncillaryData,
+    A: AncillaryData + Clone,
+    A::Weights: Clone,
 {
     pub fn new(tau: usize) -> Self {
         Self {
@@ -105,19 +109,114 @@ where
 
 impl<A> Compose for Coreset<A>
 where
-    A: AncillaryData,
-    A::Weights: Compose,
+    A: AncillaryData + Clone,
+    A::Weights: Compose + Clone,
 {
     fn compose(a: Self, b: Self) -> Self {
-        let coreset_fit = match (a.coreset_fit, b.coreset_fit) {
-            (Some(afit), Some(bfit)) => Some(Compose::compose(afit, bfit)),
-            (None, Some(bfit)) => Some(bfit),
-            (Some(afit), None) => Some(afit),
-            (None, None) => None,
-        };
+        assert!(a.coreset_fit.is_some());
+        assert!(b.coreset_fit.is_some());
+        let coreset_fit = Some(Compose::compose(
+            a.coreset_fit.unwrap(),
+            b.coreset_fit.unwrap(),
+        ));
         Self {
             tau: a.tau + b.tau,
             coreset_fit,
         }
+    }
+}
+
+pub trait PartitionIn {
+    type Output<'slf>
+    where
+        Self: 'slf;
+
+    /// Returns an iterator of `num_parts` chunks of `self`.
+    fn partition_in(&self, num_parts: usize) -> impl Iterator<Item = Self::Output<'_>>;
+}
+
+impl PartitionIn for Array1<usize> {
+    type Output<'slf> = ArrayView1<'slf, usize>;
+
+    fn partition_in(&self, num_parts: usize) -> impl Iterator<Item = Self::Output<'_>> {
+        let size = (self.len() as f64 / num_parts as f64).ceil() as usize;
+        self.axis_chunks_iter(Axis(0), size)
+    }
+}
+
+impl PartitionIn for () {
+    type Output<'slf> = ();
+
+    fn partition_in(&self, num_parts: usize) -> impl Iterator<Item = Self::Output<'_>> {
+        vec![(); num_parts].into_iter()
+    }
+}
+
+pub struct ParallelCoreset<A>
+where
+    A: AncillaryData + Clone,
+    A::Weights: Compose + Clone,
+{
+    coresets: Vec<Coreset<A>>,
+    composed_fit: Option<CoresetFit<A::Weights>>,
+}
+
+impl<A> ParallelCoreset<A>
+where
+    A: AncillaryData + PartitionIn + Send + Clone,
+    A::Weights: Compose + Send + Clone,
+{
+    pub fn new(tau: usize, threads: usize) -> Self {
+        let mut coresets = Vec::with_capacity(threads);
+        for _ in 0..threads {
+            coresets.push(Coreset::new(tau));
+        }
+        Self {
+            coresets,
+            composed_fit: None,
+        }
+    }
+
+    pub fn fit<S: Data<Elem = f32>, P>(&mut self, data: &ArrayBase<S, Ix2>, ancillary: P)
+    where
+        for<'a> P: PartitionIn<Output<'a> = A> + 'static,
+    {
+        let coresets = &mut self.coresets;
+        let n_chunks = coresets.len();
+        let chunk_size = (data.nrows() as f64 / n_chunks as f64).ceil() as usize;
+        let chunks = data.axis_chunks_iter(Axis(0), chunk_size);
+        let ancillary_chunks = ancillary.partition_in(n_chunks);
+        std::thread::scope(|scope| {
+            for ((coreset, chunk), ancillary_chunk) in
+                coresets.iter_mut().zip(chunks).zip(ancillary_chunks)
+            {
+                scope.spawn(move || {
+                    coreset.fit_predict(&chunk, ancillary_chunk);
+                });
+            }
+        });
+
+        // put together the solution
+        let mut composed = coresets[0].clone();
+        for coreset in &coresets[1..] {
+            composed = Compose::compose(composed, coreset.clone());
+        }
+
+        self.composed_fit.replace(composed.coreset_fit.unwrap());
+    }
+
+    pub fn coreset_points(&self) -> Option<ArrayView2<f32>> {
+        self.composed_fit
+            .as_ref()
+            .map(|cf| cf.coreset_points.view())
+    }
+
+    pub fn coreset_radii(&self) -> Option<ArrayView1<f32>> {
+        self.composed_fit.as_ref().map(|cf| cf.radius.view())
+    }
+
+    pub fn coreset_weights(&self) -> Option<A::Weights> {
+        // FIXME: remove this clone
+        self.composed_fit.as_ref().map(|cf| cf.weights.clone())
     }
 }

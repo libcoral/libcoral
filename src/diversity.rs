@@ -1,4 +1,7 @@
-use crate::{coreset::Coreset, gmm::greedy_minimum_maximum};
+use crate::{
+    coreset::{Coreset, ParallelCoreset},
+    gmm::greedy_minimum_maximum,
+};
 use ndarray::{prelude::*, Data};
 
 pub enum DiversityKind {
@@ -22,6 +25,7 @@ pub struct DiversityMaximization {
     kind: DiversityKind,
     solution: Option<Array1<usize>>,
     coreset_size: Option<usize>,
+    threads: usize,
 }
 
 impl DiversityMaximization {
@@ -31,28 +35,43 @@ impl DiversityMaximization {
             kind,
             solution: None,
             coreset_size: None,
+            threads: 1,
         }
     }
 
     pub fn with_coreset(self, coreset_size: usize) -> Self {
         assert!(coreset_size > self.k);
         Self {
-            k: self.k,
-            kind: self.kind,
-            solution: self.solution,
             coreset_size: Some(coreset_size),
+            ..self
         }
     }
 
+    pub fn with_threads(self, threads: usize) -> Self {
+        assert!(threads >= 1);
+        Self { threads, ..self }
+    }
+
     pub fn fit<S: Data<Elem = f32>>(&mut self, data: &ArrayBase<S, Ix2>) {
-        if let Some(coreset_size) = self.coreset_size {
-            let mut coreset = Coreset::new(coreset_size);
-            // TODO: actually use ancillary data, if present
-            coreset.fit_predict(data, ());
-            let data = coreset.coreset_points().unwrap();
-            self.solution.replace(self.kind.solve(&data, self.k));
-        } else {
-            self.solution.replace(self.kind.solve(data, self.k));
+        match (self.threads, self.coreset_size) {
+            (1, None) => {
+                self.solution.replace(self.kind.solve(data, self.k));
+            }
+            (1, Some(coreset_size)) => {
+                let mut coreset = Coreset::new(coreset_size);
+                // TODO: actually use ancillary data, if present
+                coreset.fit_predict(data, ());
+                let data = coreset.coreset_points().unwrap();
+                self.solution.replace(self.kind.solve(&data, self.k));
+            }
+            (threads, Some(coreset_size)) => {
+                let mut coreset = ParallelCoreset::new(coreset_size, threads);
+                // TODO: actually use ancillary data, if present
+                coreset.fit(data, ());
+                let data = coreset.coreset_points().unwrap();
+                self.solution.replace(self.kind.solve(&data, self.k));
+            }
+            _ => panic!("you should specify a coreset size"),
         }
     }
 }
