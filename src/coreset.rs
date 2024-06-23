@@ -1,4 +1,4 @@
-use ndarray::{concatenate, iter::AxisChunksIter, prelude::*, Data};
+use ndarray::{concatenate, prelude::*, Data};
 
 pub trait AncillaryData: Sized {
     type Weights: Clone;
@@ -126,29 +126,38 @@ where
     }
 }
 
-pub trait PartitionIn {
+pub trait NChunks {
     type Output<'slf>
     where
         Self: 'slf;
 
-    /// Returns an iterator of `num_parts` chunks of `self`.
-    fn partition_in(&self, num_parts: usize) -> impl Iterator<Item = Self::Output<'_>>;
+    /// Returns an iterator of `num_chunks` chunks of `self`.
+    fn nchunks(&self, num_chunks: usize) -> impl Iterator<Item = Self::Output<'_>>;
 }
 
-impl PartitionIn for Array1<usize> {
+impl NChunks for Array1<usize> {
     type Output<'slf> = ArrayView1<'slf, usize>;
 
-    fn partition_in(&self, num_parts: usize) -> impl Iterator<Item = Self::Output<'_>> {
-        let size = (self.len() as f64 / num_parts as f64).ceil() as usize;
+    fn nchunks(&self, num_chunks: usize) -> impl Iterator<Item = Self::Output<'_>> {
+        let size = (self.len() as f64 / num_chunks as f64).ceil() as usize;
         self.axis_chunks_iter(Axis(0), size)
     }
 }
 
-impl PartitionIn for () {
+impl<S: ndarray::Data<Elem = f32>> NChunks for ArrayBase<S, Ix2> {
+    type Output<'slf> = ArrayView2<'slf, f32> where S: 'slf;
+
+    fn nchunks(&self, num_chunks: usize) -> impl Iterator<Item = Self::Output<'_>> {
+        let size = (self.len() as f64 / num_chunks as f64).ceil() as usize;
+        self.axis_chunks_iter(Axis(0), size)
+    }
+}
+
+impl NChunks for () {
     type Output<'slf> = ();
 
-    fn partition_in(&self, num_parts: usize) -> impl Iterator<Item = Self::Output<'_>> {
-        vec![(); num_parts].into_iter()
+    fn nchunks(&self, num_chunks: usize) -> impl Iterator<Item = Self::Output<'_>> {
+        vec![(); num_chunks].into_iter()
     }
 }
 
@@ -163,7 +172,7 @@ where
 
 impl<A> ParallelCoreset<A>
 where
-    A: AncillaryData + PartitionIn + Send + Clone,
+    A: AncillaryData + NChunks + Send + Clone,
     A::Weights: Compose + Send + Clone,
 {
     pub fn new(tau: usize, threads: usize) -> Self {
@@ -179,13 +188,12 @@ where
 
     pub fn fit<S: Data<Elem = f32>, P>(&mut self, data: &ArrayBase<S, Ix2>, ancillary: P)
     where
-        for<'a> P: PartitionIn<Output<'a> = A> + 'static,
+        for<'a> P: NChunks<Output<'a> = A> + 'static,
     {
         let coresets = &mut self.coresets;
         let n_chunks = coresets.len();
-        let chunk_size = (data.nrows() as f64 / n_chunks as f64).ceil() as usize;
-        let chunks = data.axis_chunks_iter(Axis(0), chunk_size);
-        let ancillary_chunks = ancillary.partition_in(n_chunks);
+        let chunks = data.nchunks(n_chunks);
+        let ancillary_chunks = ancillary.nchunks(n_chunks);
         std::thread::scope(|scope| {
             for ((coreset, chunk), ancillary_chunk) in
                 coresets.iter_mut().zip(chunks).zip(ancillary_chunks)
