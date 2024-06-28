@@ -1,0 +1,11 @@
+[package]
+name = "libcoral"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ndarray = "0.15.6"
+
+[dev-dependencies]
+ndarray-rand = "0.14.0"
+
