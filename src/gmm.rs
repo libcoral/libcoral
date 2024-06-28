@@ -84,3 +84,24 @@ pub fn greedy_minimum_maximum<S: Data<Elem = f32>>(
 
     (centers, assignment, radii)
 }
+
+#[cfg(test)]
+mod test {
+    use crate::test::*;
+
+    use super::greedy_minimum_maximum;
+
+    #[test]
+    fn test_anticover() {
+        let data = make_blobs(3, 100, 10, 1.0, 10.0);
+
+        let mut last_radius = f32::INFINITY;
+
+        for k in 1..100 {
+            let (_centers, _assignment, radii) = greedy_minimum_maximum(&data, k);
+            let radius = radii.into_iter().max_by(f32::total_cmp).unwrap();
+            assert!(radius < last_radius);
+            last_radius = radius;
+        }
+    }
+}
