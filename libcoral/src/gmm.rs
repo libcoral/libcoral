@@ -1,11 +1,11 @@
 use ndarray::{prelude::*, Data};
 
 /// computes the squared norms of the given two dimensional array
-fn compute_sq_norms<S: Data<Elem = f32>>(data: &ArrayBase<S, Ix2>) -> Array<f32, Ix1> {
+pub fn compute_sq_norms<S: Data<Elem = f32>>(data: &ArrayBase<S, Ix2>) -> Array<f32, Ix1> {
     data.rows().into_iter().map(|row| row.dot(&row)).collect()
 }
 
-fn eucl<S: Data<Elem = f32>>(
+pub fn eucl<S: Data<Elem = f32>>(
     a: &ArrayBase<S, Ix1>,
     b: &ArrayBase<S, Ix1>,
     sq_norm_a: f32,

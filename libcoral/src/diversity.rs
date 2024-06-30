@@ -1,6 +1,6 @@
 use crate::{
     coreset::{Coreset, ParallelCoreset},
-    gmm::greedy_minimum_maximum,
+    gmm::{compute_sq_norms, eucl, greedy_minimum_maximum},
 };
 use ndarray::{prelude::*, Data};
 
@@ -15,6 +15,22 @@ impl DiversityKind {
             Self::RemoteEdge => {
                 let (sol, _, _) = greedy_minimum_maximum(data, k);
                 sol
+            }
+        }
+    }
+
+    fn cost<S: Data<Elem = f32>>(&self, data: &ArrayBase<S, Ix2>, k: usize) -> f32 {
+        match self {
+            Self::RemoteEdge => {
+                let sq_norms = compute_sq_norms(data);
+                let mut min = f32::INFINITY;
+                for i in 0..data.nrows() {
+                    for j in 0..i {
+                        let d = eucl(&data.row(i), &data.row(j), sq_norms[i], sq_norms[j]);
+                        min = min.min(d);
+                    }
+                }
+                min
             }
         }
     }
@@ -52,6 +68,10 @@ impl DiversityMaximization {
         Self { threads, ..self }
     }
 
+    pub fn cost<S: Data<Elem = f32>>(&mut self, data: &ArrayBase<S, Ix2>) -> f32 {
+        self.kind.cost(data, self.k)
+    }
+
     pub fn fit<S: Data<Elem = f32>>(&mut self, data: &ArrayBase<S, Ix2>) {
         match (self.threads, self.coreset_size) {
             (1, None) => {
@@ -73,5 +93,9 @@ impl DiversityMaximization {
             }
             _ => panic!("you should specify a coreset size"),
         }
+    }
+
+    pub fn get_solution_indices(&self) -> Option<Array1<usize>> {
+        self.solution.clone()
     }
 }

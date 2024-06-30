@@ -51,6 +51,8 @@
             numpy
             maturin
             icecream
+            scipy
+            scikit-learn
           ]);
         };
       });

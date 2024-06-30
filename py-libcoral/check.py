@@ -2,18 +2,26 @@ import time
 from icecream import ic
 import libcoral
 import numpy as np
+from scipy.spatial.distance import pdist
 
-n = 10_000_000
-dim = 10
+n = 1_000_000
+dim = 1000
 
 rng = np.random.default_rng(212)
 pts = rng.uniform(0, 10, size=(n, dim)).astype(np.float32)
+print("Generated points")
 
-coreset = libcoral.Coreset(1000, 16)
+diversity = libcoral.DiversityMaximization(
+    100,
+    "remote-edge"
+)
 start = time.time()
-coreset.fit(pts)
+diversity.fit(pts)
 elapsed = time.time() - start
-coreset_points, weights, radius = coreset.get_fit()
 
-ic(coreset_points, weights, radius)
-ic(elapsed)
+sol_idxs = diversity.solution_indices()
+
+sol = pts[sol_idxs]
+
+cost = pdist(sol).min()
+ic(elapsed, cost, diversity.cost(sol))
