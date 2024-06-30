@@ -2,9 +2,10 @@ import time
 from icecream import ic
 import libcoral
 import numpy as np
-from scipy.spatial.distance import pdist
+import logging
+logging.basicConfig(level=logging.DEBUG)
 
-n = 10000
+n = 20000
 dim = 10
 
 rng = np.random.default_rng(212)
@@ -12,7 +13,7 @@ pts = rng.uniform(0, 10, size=(n, dim)).astype(np.float32)
 print("Generated points")
 
 diversity = libcoral.DiversityMaximization(
-    10,
+    20,
     "remote-clique"
 )
 start = time.time()

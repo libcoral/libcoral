@@ -27,10 +27,10 @@ impl DiversityKind {
                 if self.cost(&data.select(Axis(0), sol.as_slice().unwrap()))
                     > self.cost(&data.select(Axis(0), sol2.as_slice().unwrap()))
                 {
-                    eprintln!("Returning the solution from the matching");
+                    log::debug!("Returning the solution from the matching");
                     sol
                 } else {
-                    eprintln!("Returning the solution from gmm");
+                    log::debug!("Returning the solution from gmm");
                     sol2
                 }
             }

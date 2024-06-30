@@ -97,6 +97,7 @@ impl PyCoreset {
 #[pymodule]
 #[pyo3(name = "libcoral")]
 fn py_libcoral(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    pyo3_log::init();
     m.add_class::<PyCoreset>()?;
     m.add_class::<PyDiversityMaximization>()?;
     Ok(())

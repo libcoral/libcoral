@@ -12,3 +12,4 @@ crate-type = ["cdylib"]
 numpy = "0.21"
 pyo3 = "0.21"
 libcoral = {path = "../libcoral/"}
+pyo3-log = "0.10.0"
