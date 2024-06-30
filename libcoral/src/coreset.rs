@@ -1,7 +1,7 @@
 use ndarray::{concatenate, prelude::*, Data};
 
-pub trait AncillaryData: Sized {
-    type Weights: Clone;
+pub trait AncillaryData {
+    type Weights: Clone + Send;
 
     fn compute_weights(&self, assignment: &Array1<usize>) -> Self::Weights;
 }
@@ -51,7 +51,7 @@ impl<W: Compose> Compose for CoresetFit<W> {
 #[derive(Clone)]
 pub struct Coreset<A>
 where
-    A: AncillaryData + Clone,
+    A: AncillaryData,
     A::Weights: Clone,
 {
     /// the size of the coreset, i.e. the number of proxy
@@ -148,7 +148,7 @@ impl<S: ndarray::Data<Elem = f32>> NChunks for ArrayBase<S, Ix2> {
     type Output<'slf> = ArrayView2<'slf, f32> where S: 'slf;
 
     fn nchunks(&self, num_chunks: usize) -> impl Iterator<Item = Self::Output<'_>> {
-        let size = (self.len() as f64 / num_chunks as f64).ceil() as usize;
+        let size = (self.nrows() as f64 / num_chunks as f64).ceil() as usize;
         self.axis_chunks_iter(Axis(0), size)
     }
 }
@@ -195,15 +195,22 @@ where
         let chunks = data.nchunks(n_chunks);
         let ancillary_chunks = ancillary.nchunks(n_chunks);
         std::thread::scope(|scope| {
+            let mut handles = Vec::new();
             for ((coreset, chunk), ancillary_chunk) in
                 coresets.iter_mut().zip(chunks).zip(ancillary_chunks)
             {
-                scope.spawn(move || {
+                let h = scope.spawn(move || {
                     coreset.fit_predict(&chunk, ancillary_chunk);
                 });
+                handles.push(h);
+            }
+
+            for h in handles {
+                h.join().unwrap();
             }
         });
 
+        eprintln!("Putting the solution together");
         // put together the solution
         let mut composed = coresets[0].clone();
         for coreset in &coresets[1..] {

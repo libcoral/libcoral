@@ -36,6 +36,7 @@
     {
       devShells = forEachSupportedSystem ({ pkgs }: {
         default = pkgs.mkShell {
+          venvDir = ".venv";
           packages = with pkgs; [
             rustToolchain
             openssl
@@ -44,7 +45,13 @@
             cargo-edit
             cargo-watch
             rust-analyzer
-          ];
+            python311
+          ] ++ (with pkgs.python311Packages; [
+            venvShellHook
+            numpy
+            maturin
+            icecream
+          ]);
         };
       });
     };
