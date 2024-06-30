@@ -4,16 +4,16 @@ import libcoral
 import numpy as np
 from scipy.spatial.distance import pdist
 
-n = 1_000_000
-dim = 1000
+n = 10000
+dim = 10
 
 rng = np.random.default_rng(212)
 pts = rng.uniform(0, 10, size=(n, dim)).astype(np.float32)
 print("Generated points")
 
 diversity = libcoral.DiversityMaximization(
-    100,
-    "remote-edge"
+    10,
+    "remote-clique"
 )
 start = time.time()
 diversity.fit(pts)
@@ -23,5 +23,4 @@ sol_idxs = diversity.solution_indices()
 
 sol = pts[sol_idxs]
 
-cost = pdist(sol).min()
-ic(elapsed, cost, diversity.cost(sol))
+ic(elapsed, diversity.cost(sol))

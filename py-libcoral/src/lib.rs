@@ -18,6 +18,7 @@ impl PyDiversityMaximization {
     fn new(k: usize, kind: &str, coreset_size: Option<usize>, num_threads: Option<usize>) -> Self {
         let kind = match kind {
             "remote-edge" | "edge" => DiversityKind::RemoteEdge,
+            "remote-clique" | "clique" => DiversityKind::RemoteClique,
             _ => panic!("Wrong kind"),
         };
         let mut inner = DiversityMaximization::new(k, kind);
