@@ -52,7 +52,7 @@ impl PyDiversityMaximization {
 #[pyclass]
 #[pyo3(name = "Coreset")]
 pub struct PyCoreset {
-    inner: ParallelCoreset<()>,
+    inner: ParallelCoreset,
 }
 
 #[pymethods]
@@ -65,7 +65,7 @@ impl PyCoreset {
     }
 
     fn fit<'py>(mut self_: PyRefMut<'py, Self>, data: PyReadonlyArray2<'py, f32>) {
-        self_.inner.fit(&data.as_array(), ());
+        self_.inner.fit(&data.as_array(), None);
     }
 
     /// Get information about the fitted coreset.
@@ -79,7 +79,7 @@ impl PyCoreset {
         self_: PyRef<'_, Self>,
     ) -> (
         Bound<'_, PyArray2<f32>>,
-        Bound<'_, PyArray1<usize>>,
+        Bound<'_, PyArrayDyn<usize>>,
         Bound<'_, PyArray1<f32>>,
     ) {
         let centers = self_.inner.coreset_points().unwrap();

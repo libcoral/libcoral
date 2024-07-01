@@ -109,14 +109,14 @@ impl DiversityMaximization {
             (1, Some(coreset_size)) => {
                 let mut coreset = Coreset::new(coreset_size);
                 // TODO: actually use ancillary data, if present
-                coreset.fit_predict(data, ());
+                coreset.fit_predict(data, None);
                 let data = coreset.coreset_points().unwrap();
                 self.solution.replace(self.kind.solve(&data, self.k));
             }
             (threads, Some(coreset_size)) => {
                 let mut coreset = ParallelCoreset::new(coreset_size, threads);
                 // TODO: actually use ancillary data, if present
-                coreset.fit(data, ());
+                coreset.fit(data, None);
                 let data = coreset.coreset_points().unwrap();
                 self.solution.replace(self.kind.solve(&data, self.k));
             }
@@ -177,7 +177,7 @@ fn maximum_weight_matching<S: Data<Elem = f32>>(
     let mut dists_iter = dists.into_iter();
     while result.len() / 2 < k / 2 {
         // we express the condition in terms of pairs
-        let (d, i, j) = dists_iter.next().unwrap();
+        let (_d, i, j) = dists_iter.next().unwrap();
         if !flags[i] && !flags[j] {
             result.push(i);
             result.push(j);

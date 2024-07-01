@@ -1,17 +1,18 @@
 use ndarray::{concatenate, prelude::*, Data};
+use std::sync::Arc;
 
-pub trait AncillaryData {
-    type Weights: Clone + Send;
+trait FnWeight: Fn(&Array1<usize>, &ArrayViewD<usize>) -> ArrayD<usize> + Send + Sync {}
 
-    fn compute_weights(&self, assignment: &Array1<usize>) -> Self::Weights;
+pub struct AncillaryInfo<'data> {
+    ancillary: ArrayViewD<'data, usize>,
+    // compute_weights_fn: Arc<dyn Fn(&Array1<usize>, &ArrayViewD<usize>) -> ArrayD<usize>>,
+    compute_weights_fn: Arc<dyn FnWeight>,
 }
 
-impl AncillaryData for () {
-    type Weights = Array1<usize>;
-
-    fn compute_weights(&self, assignment: &Array1<usize>) -> Self::Weights {
-        // assign weight 1 to all coreset points if there is no ancillary data
-        Array1::ones(assignment.iter().max().unwrap() + 1)
+impl<'data> AncillaryInfo<'data> {
+    fn compute_weights(&self, assignment: &Array1<usize>) -> ArrayD<usize> {
+        assert_eq!(assignment.len(), self.ancillary.shape()[0]);
+        (self.compute_weights_fn)(assignment, &self.ancillary)
     }
 }
 
@@ -31,14 +32,20 @@ impl<T: Copy> Compose for Array2<T> {
     }
 }
 
-#[derive(Clone)]
-struct CoresetFit<W> {
-    coreset_points: Array2<f32>,
-    radius: Array1<f32>,
-    weights: W,
+impl<T: Copy> Compose for ArrayD<T> {
+    fn compose(a: Self, b: Self) -> Self {
+        concatenate![Axis(0), a, b]
+    }
 }
 
-impl<W: Compose> Compose for CoresetFit<W> {
+#[derive(Clone)]
+struct CoresetFit {
+    coreset_points: Array2<f32>,
+    radius: Array1<f32>,
+    weights: ArrayD<usize>,
+}
+
+impl Compose for CoresetFit {
     fn compose(a: Self, b: Self) -> Self {
         Self {
             coreset_points: Compose::compose(a.coreset_points, b.coreset_points),
@@ -49,23 +56,15 @@ impl<W: Compose> Compose for CoresetFit<W> {
 }
 
 #[derive(Clone)]
-pub struct Coreset<A>
-where
-    A: AncillaryData,
-    A::Weights: Clone,
-{
+pub struct Coreset {
     /// the size of the coreset, i.e. the number of proxy
     /// points to be selected
     tau: usize,
     /// the function to compute the weight of each proxy point
-    coreset_fit: Option<CoresetFit<A::Weights>>,
+    coreset_fit: Option<CoresetFit>,
 }
 
-impl<A> Coreset<A>
-where
-    A: AncillaryData + Clone,
-    A::Weights: Clone,
-{
+impl Coreset {
     pub fn new(tau: usize) -> Self {
         Self {
             tau,
@@ -75,15 +74,19 @@ where
 
     /// Compute the coreset points and their weights. Return the array with the assignment of input
     /// data points to the closest coreset point, i.e. the proxy function.
-    pub fn fit_predict<S: Data<Elem = f32>>(
+    pub fn fit_predict<'data, S: Data<Elem = f32>>(
         &mut self,
         data: &ArrayBase<S, Ix2>,
-        ancillary: A,
+        ancillary: Option<AncillaryInfo<'data>>,
     ) -> Array1<usize> {
         use crate::gmm::*;
 
         let (coreset_points, assignment, radius) = greedy_minimum_maximum(data, self.tau);
-        let weights = ancillary.compute_weights(&assignment);
+        let weights = if let Some(ancillary) = ancillary {
+            ancillary.compute_weights(&assignment)
+        } else {
+            ArrayD::ones(IxDyn(&[coreset_points.len()]))
+        };
         self.coreset_fit.replace(CoresetFit {
             coreset_points: data.select(Axis(0), coreset_points.as_slice().unwrap()),
             radius,
@@ -101,17 +104,12 @@ where
         self.coreset_fit.as_ref().map(|cf| cf.radius.view())
     }
 
-    pub fn coreset_weights(&self) -> Option<A::Weights> {
-        // FIXME: remove this clone
-        self.coreset_fit.as_ref().map(|cf| cf.weights.clone())
+    pub fn coreset_weights(&self) -> Option<ArrayViewD<usize>> {
+        self.coreset_fit.as_ref().map(|cf| cf.weights.view())
     }
 }
 
-impl<A> Compose for Coreset<A>
-where
-    A: AncillaryData + Clone,
-    A::Weights: Compose + Clone,
-{
+impl Compose for Coreset {
     fn compose(a: Self, b: Self) -> Self {
         assert!(a.coreset_fit.is_some());
         assert!(b.coreset_fit.is_some());
@@ -153,6 +151,40 @@ impl<S: ndarray::Data<Elem = f32>> NChunks for ArrayBase<S, Ix2> {
     }
 }
 
+impl<S: ndarray::Data<Elem = usize>> NChunks for ArrayBase<S, IxDyn> {
+    type Output<'slf> = ArrayViewD<'slf, usize> where S: 'slf;
+
+    fn nchunks(&self, num_chunks: usize) -> impl Iterator<Item = Self::Output<'_>> {
+        let size = (self.shape()[0] as f64 / num_chunks as f64).ceil() as usize;
+        self.axis_chunks_iter(Axis(0), size)
+    }
+}
+
+impl<'data> NChunks for AncillaryInfo<'data> {
+    type Output<'slf> = AncillaryInfo<'slf> where Self: 'slf;
+
+    fn nchunks(&self, num_chunks: usize) -> impl Iterator<Item = Self::Output<'_>> {
+        let func = self.compute_weights_fn.clone();
+        let data_chunks = self.ancillary.nchunks(num_chunks);
+        data_chunks.map(move |c| AncillaryInfo {
+            ancillary: c,
+            compute_weights_fn: func.clone(),
+        })
+    }
+}
+
+impl<C: NChunks> NChunks for Option<C> {
+    type Output<'slf> = Option<C::Output<'slf>> where Self: 'slf;
+
+    fn nchunks(&self, num_chunks: usize) -> impl Iterator<Item = Self::Output<'_>> {
+        match self {
+            Some(data) => data.nchunks(num_chunks).map(|c| Some(c)),
+            // None => vec![None; num_chunks].into_iter(),
+            None => panic!(),
+        }
+    }
+}
+
 impl NChunks for () {
     type Output<'slf> = ();
 
@@ -161,20 +193,12 @@ impl NChunks for () {
     }
 }
 
-pub struct ParallelCoreset<A>
-where
-    A: AncillaryData + Clone,
-    A::Weights: Compose + Clone,
-{
-    coresets: Vec<Coreset<A>>,
-    composed_fit: Option<CoresetFit<A::Weights>>,
+pub struct ParallelCoreset {
+    coresets: Vec<Coreset>,
+    composed_fit: Option<CoresetFit>,
 }
 
-impl<A> ParallelCoreset<A>
-where
-    A: AncillaryData + NChunks + Send + Clone,
-    A::Weights: Compose + Send + Clone,
-{
+impl ParallelCoreset {
     pub fn new(tau: usize, threads: usize) -> Self {
         let mut coresets = Vec::with_capacity(threads);
         for _ in 0..threads {
@@ -186,10 +210,11 @@ where
         }
     }
 
-    pub fn fit<S: Data<Elem = f32>, P>(&mut self, data: &ArrayBase<S, Ix2>, ancillary: P)
-    where
-        for<'a> P: NChunks<Output<'a> = A> + 'static,
-    {
+    pub fn fit<S: Data<Elem = f32>>(
+        &mut self,
+        data: &ArrayBase<S, Ix2>,
+        ancillary: Option<AncillaryInfo>,
+    ) {
         let coresets = &mut self.coresets;
         let n_chunks = coresets.len();
         let chunks = data.nchunks(n_chunks);
@@ -230,8 +255,7 @@ where
         self.composed_fit.as_ref().map(|cf| cf.radius.view())
     }
 
-    pub fn coreset_weights(&self) -> Option<A::Weights> {
-        // FIXME: remove this clone
-        self.composed_fit.as_ref().map(|cf| cf.weights.clone())
+    pub fn coreset_weights(&self) -> Option<ArrayViewD<usize>> {
+        self.composed_fit.as_ref().map(|cf| cf.weights.view())
     }
 }
