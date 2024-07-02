@@ -109,14 +109,14 @@ impl DiversityMaximization {
             (1, Some(coreset_size)) => {
                 let mut coreset = Coreset::new(coreset_size);
                 // TODO: actually use ancillary data, if present
-                coreset.fit_predict(data, None);
+                coreset.fit_predict::<_, ()>(data, None);
                 let data = coreset.coreset_points().unwrap();
                 self.solution.replace(self.kind.solve(&data, self.k));
             }
             (threads, Some(coreset_size)) => {
                 let mut coreset = ParallelCoreset::new(coreset_size, threads);
                 // TODO: actually use ancillary data, if present
-                coreset.fit(data, None);
+                coreset.fit::<_, ()>(data, None);
                 let data = coreset.coreset_points().unwrap();
                 self.solution.replace(self.kind.solve(&data, self.k));
             }

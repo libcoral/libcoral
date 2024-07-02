@@ -1,17 +1,17 @@
 use ndarray::{concatenate, prelude::*, Data};
 use std::sync::Arc;
 
-trait FnWeight: Fn(&Array1<usize>, &ArrayViewD<usize>) -> ArrayD<usize> + Send + Sync {}
+trait FnWeight<A>: Fn(&Array1<usize>, &[A]) -> ArrayD<usize> + Send + Sync {}
 
-pub struct AncillaryInfo<'data> {
-    ancillary: ArrayViewD<'data, usize>,
-    compute_weights_fn: Arc<dyn FnWeight>,
+pub struct AncillaryInfo<'data, A> {
+    ancillary: &'data [A],
+    compute_weights_fn: Arc<dyn FnWeight<A>>,
 }
 
-impl<'data> AncillaryInfo<'data> {
+impl<'data, A> AncillaryInfo<'data, A> {
     fn compute_weights(&self, assignment: &Array1<usize>) -> ArrayD<usize> {
-        assert_eq!(assignment.len(), self.ancillary.shape()[0]);
-        (self.compute_weights_fn)(assignment, &self.ancillary)
+        assert_eq!(assignment.len(), self.ancillary.len());
+        (self.compute_weights_fn)(assignment, self.ancillary)
     }
 }
 
@@ -73,10 +73,10 @@ impl Coreset {
 
     /// Compute the coreset points and their weights. Return the array with the assignment of input
     /// data points to the closest coreset point, i.e. the proxy function.
-    pub fn fit_predict<'data, S: Data<Elem = f32>>(
+    pub fn fit_predict<'data, S: Data<Elem = f32>, A>(
         &mut self,
         data: &ArrayBase<S, Ix2>,
-        ancillary: Option<AncillaryInfo<'data>>,
+        ancillary: Option<AncillaryInfo<'data, A>>,
     ) -> Array1<usize> {
         use crate::gmm::*;
 
@@ -159,8 +159,17 @@ impl<S: ndarray::Data<Elem = usize>> NChunks for ArrayBase<S, IxDyn> {
     }
 }
 
-impl<'data> NChunks for AncillaryInfo<'data> {
-    type Output<'slf> = AncillaryInfo<'slf> where Self: 'slf;
+impl<T> NChunks for &[T] {
+    type Output<'slf> = &'slf [T] where Self: 'slf;
+
+    fn nchunks(&self, num_chunks: usize) -> impl Iterator<Item = Self::Output<'_>> {
+        let size = (self.len() as f64 / num_chunks as f64).ceil() as usize;
+        self.chunks(size)
+    }
+}
+
+impl<'data, A> NChunks for AncillaryInfo<'data, A> {
+    type Output<'slf> = AncillaryInfo<'slf, A> where Self: 'slf;
 
     fn nchunks(&self, num_chunks: usize) -> impl Iterator<Item = Self::Output<'_>> {
         let func = self.compute_weights_fn.clone();
@@ -209,10 +218,10 @@ impl ParallelCoreset {
         }
     }
 
-    pub fn fit<S: Data<Elem = f32>>(
+    pub fn fit<S: Data<Elem = f32>, A: Send + Sync>(
         &mut self,
         data: &ArrayBase<S, Ix2>,
-        ancillary: Option<AncillaryInfo>,
+        ancillary: Option<AncillaryInfo<A>>,
     ) {
         let coresets = &mut self.coresets;
         let n_chunks = coresets.len();
