@@ -7,6 +7,7 @@ edition = "2021"
 ndarray = "0.15.6"
 log = "0.4.22"
 pyo3 = { version="0.21", optional=true }
+thread_local = "1.1.8"
 
 [dev-dependencies]
 ndarray-rand = "0.14.0"

@@ -1,6 +1,7 @@
 pub mod coreset;
 pub mod diversity;
 pub mod gmm;
+pub mod matroid;
 
 pub(crate) fn check_signals() {
     #[cfg(feature = "pyo3")]
