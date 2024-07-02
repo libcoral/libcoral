@@ -62,6 +62,7 @@ dependencies = [
  "log",
  "ndarray",
  "ndarray-rand",
+ "pyo3",
 ]
 
 [[package]]

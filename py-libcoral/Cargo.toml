@@ -11,5 +11,5 @@ crate-type = ["cdylib"]
 [dependencies]
 numpy = "0.21"
 pyo3 = "0.21"
-libcoral = {path = "../libcoral/"}
+libcoral = {path = "../libcoral/", features=["pyo3"]}
 pyo3-log = "0.10.0"

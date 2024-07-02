@@ -5,7 +5,6 @@ trait FnWeight: Fn(&Array1<usize>, &ArrayViewD<usize>) -> ArrayD<usize> + Send +
 
 pub struct AncillaryInfo<'data> {
     ancillary: ArrayViewD<'data, usize>,
-    // compute_weights_fn: Arc<dyn Fn(&Array1<usize>, &ArrayViewD<usize>) -> ArrayD<usize>>,
     compute_weights_fn: Arc<dyn FnWeight>,
 }
 

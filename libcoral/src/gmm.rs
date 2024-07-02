@@ -60,6 +60,7 @@ pub fn greedy_minimum_maximum<S: Data<Elem = f32>>(
     }
 
     for idx in 1..k {
+        crate::check_signals();
         let farthest = argmax(&distances);
         centers[idx] = farthest;
         for i in 0..n {

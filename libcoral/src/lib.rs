@@ -2,6 +2,13 @@ pub mod coreset;
 pub mod diversity;
 pub mod gmm;
 
+pub(crate) fn check_signals() {
+    #[cfg(feature = "pyo3")]
+    {
+        pyo3::Python::with_gil(|py| py.check_signals().expect("caught signal"))
+    }
+}
+
 #[cfg(test)]
 mod test {
     use ndarray::prelude::*;

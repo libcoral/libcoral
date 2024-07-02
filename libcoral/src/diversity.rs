@@ -161,6 +161,7 @@ fn maximum_weight_matching<S: Data<Elem = f32>>(
     let max_heap_size = data.nrows() * k;
     let mut heap = BinaryHeap::new();
     for i in 0..data.nrows() {
+        crate::check_signals();
         for j in 0..i {
             let d = eucl(&data.row(i), &data.row(j), sq_norms[i], sq_norms[j]);
             heap.push((Reverse(NonNaNF32::from(d)), i, j));
