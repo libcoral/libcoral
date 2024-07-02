@@ -5,7 +5,7 @@ import numpy as np
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
-n = 20000
+n = 5000
 dim = 10
 
 rng = np.random.default_rng(212)
@@ -13,8 +13,9 @@ pts = rng.uniform(0, 10, size=(n, dim)).astype(np.float32)
 print("Generated points")
 
 diversity = libcoral.DiversityMaximization(
-    20,
-    "remote-clique"
+    5,
+    "remote-clique",
+    coreset_size=10
 )
 start = time.time()
 diversity.fit(pts)

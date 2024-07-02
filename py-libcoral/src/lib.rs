@@ -24,7 +24,7 @@ impl PyDiversityMaximization {
         let mut inner = DiversityMaximization::new(k, kind);
         if let Some(num_threads) = num_threads {
             let coreset_size = coreset_size.unwrap_or(1000);
-            inner = inner.with_coreset(coreset_size).with_threads(num_threads);
+            inner = inner.with_coreset(coreset_size).with_threads(num_threads)
         } else if let Some(coreset_size) = coreset_size {
             inner = inner.with_coreset(coreset_size);
         }
@@ -65,7 +65,7 @@ impl PyCoreset {
     }
 
     fn fit<'py>(mut self_: PyRefMut<'py, Self>, data: PyReadonlyArray2<'py, f32>) {
-        self_.inner.fit(&data.as_array(), None);
+        self_.inner.fit::<_, ()>(&data.as_array(), None);
     }
 
     /// Get information about the fitted coreset.

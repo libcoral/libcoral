@@ -3,8 +3,20 @@ use std::sync::Arc;
 
 trait FnWeight<A>: Fn(&Array1<usize>, &[A]) -> ArrayD<usize> + Send + Sync {}
 
+/// "extract" the coreset points from the subset pertaining
+/// to the a given center. The function is presented with a slice of
+/// indices into the dataset vectors as well as the (optional) ancillary data
+trait ExtractCoresetPoints {
+    fn extract_coreset_points<S: Data<Elem = f32>, A>(
+        &self,
+        data: &ArrayBase<S, Ix2>,
+        ancillary: Option<&[A]>,
+        assigned: &[usize],
+    ) -> Array1<usize>;
+}
+
 pub struct AncillaryInfo<'data, A> {
-    ancillary: &'data [A],
+    pub ancillary: &'data [A],
     compute_weights_fn: Arc<dyn FnWeight<A>>,
 }
 
@@ -13,6 +25,15 @@ impl<'data, A> AncillaryInfo<'data, A> {
         assert_eq!(assignment.len(), self.ancillary.len());
         (self.compute_weights_fn)(assignment, self.ancillary)
     }
+}
+
+fn weight_by_count(assignment: &Array1<usize>) -> ArrayD<usize> {
+    let n_coreset_points = assignment.iter().max().unwrap() + 1;
+    let mut weights = ArrayD::zeros(IxDyn(&[n_coreset_points]));
+    for a in assignment.iter() {
+        weights[*a] += 1;
+    }
+    weights
 }
 
 pub trait Compose {
@@ -73,18 +94,22 @@ impl Coreset {
 
     /// Compute the coreset points and their weights. Return the array with the assignment of input
     /// data points to the closest coreset point, i.e. the proxy function.
-    pub fn fit_predict<'data, S: Data<Elem = f32>, A>(
+    pub fn fit_predict<S: Data<Elem = f32>, A>(
         &mut self,
         data: &ArrayBase<S, Ix2>,
-        ancillary: Option<AncillaryInfo<'data, A>>,
+        ancillary: Option<AncillaryInfo<A>>,
     ) -> Array1<usize> {
         use crate::gmm::*;
 
         let (coreset_points, assignment, radius) = greedy_minimum_maximum(data, self.tau);
+
+        // TODO: Here we need to put a call to a function to extend the
+        // coreset points selection
+
         let weights = if let Some(ancillary) = ancillary {
             ancillary.compute_weights(&assignment)
         } else {
-            ArrayD::ones(IxDyn(&[coreset_points.len()]))
+            weight_by_count(&assignment)
         };
         self.coreset_fit.replace(CoresetFit {
             coreset_points: data.select(Axis(0), coreset_points.as_slice().unwrap()),
