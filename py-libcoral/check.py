@@ -15,7 +15,8 @@ print("Generated points")
 diversity = libcoral.DiversityMaximization(
     5,
     "remote-clique",
-    coreset_size=10
+    coreset_size=10,
+    num_threads=2,
 )
 start = time.time()
 diversity.fit(pts)

@@ -1,5 +1,5 @@
 use crate::{
-    coreset::{Coreset, ParallelCoreset},
+    coreset::CoresetBuilder,
     gmm::{compute_sq_norms, eucl, greedy_minimum_maximum},
 };
 use ndarray::{prelude::*, Data};
@@ -107,17 +107,15 @@ impl DiversityMaximization {
                 self.solution.replace(self.kind.solve(data, self.k));
             }
             (1, Some(coreset_size)) => {
-                let mut coreset = Coreset::new(coreset_size);
-                // TODO: actually use ancillary data, if present
-                coreset.fit_predict::<_, ()>(data, None);
-                let data = coreset.coreset_points().unwrap();
+                let coreset = CoresetBuilder::with_tau(coreset_size).fit::<_, ()>(data, None);
+                let data = coreset.points();
                 self.solution.replace(self.kind.solve(&data, self.k));
             }
             (threads, Some(coreset_size)) => {
-                let mut coreset = ParallelCoreset::new(coreset_size, threads);
-                // TODO: actually use ancillary data, if present
-                coreset.fit::<_, ()>(data, None);
-                let data = coreset.coreset_points().unwrap();
+                let coreset = CoresetBuilder::with_tau(coreset_size)
+                    .with_threads(threads)
+                    .fit::<_, ()>(data, None);
+                let data = coreset.points();
                 self.solution.replace(self.kind.solve(&data, self.k));
             }
             _ => panic!("you should specify a coreset size"),

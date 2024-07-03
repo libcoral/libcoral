@@ -60,7 +60,8 @@ pub fn greedy_minimum_maximum<S: Data<Elem = f32>>(
     }
 
     for idx in 1..k {
-        crate::check_signals();
+        // FIXME: in a multithreaded context this call deadlocks
+        // crate::check_signals();
         let farthest = argmax(&distances);
         centers[idx] = farthest;
         for i in 0..n {
@@ -84,6 +85,38 @@ pub fn greedy_minimum_maximum<S: Data<Elem = f32>>(
     }
 
     (centers, assignment, radii)
+}
+
+pub fn assign_closest<S: Data<Elem = f32>>(
+    data: &ArrayBase<S, Ix2>,
+    centers: &Array1<usize>,
+) -> (Array1<usize>, Array1<f32>) {
+    let n = data.nrows();
+    let n_centers = centers.len();
+
+    let sq_norms = compute_sq_norms(data);
+
+    let mut distances: Array1<f32> = Array1::from_elem(n, f32::INFINITY);
+    let mut assignment = Array1::<usize>::zeros(n);
+
+    for i in 0..n {
+        for c in 0..n_centers {
+            let idx = centers[c];
+            let d = eucl(&data.row(idx), &data.row(i), sq_norms[idx], sq_norms[i]);
+            if d < distances[i] {
+                assignment[i] = idx;
+                distances[i] = d;
+            }
+        }
+    }
+
+    let mut radii: Array1<f32> = Array1::zeros(n_centers);
+
+    for i in 0..n {
+        radii[assignment[i]] = radii[assignment[i]].max(distances[i]);
+    }
+
+    (assignment, radii)
 }
 
 #[cfg(test)]
