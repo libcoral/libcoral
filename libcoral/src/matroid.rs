@@ -189,8 +189,8 @@ impl<T: TransversalMatroidElement> Matroid<T> for TransversalMatroid<T> {
     }
 
     fn is_independent_ref(&self, set: &[&T]) -> bool {
-        debug_assert!(self.maximum_matching_size(&set) == self.maximum_matching_size2(&set));
-        set.len() < self.topics.len() && self.maximum_matching_size(&set) == set.len()
+        debug_assert!(self.maximum_matching_size(set) == self.maximum_matching_size2(set));
+        set.len() < self.topics.len() && self.maximum_matching_size(set) == set.len()
     }
 
     fn maximal_independent_set<'a>(&self, set: &[&'a T]) -> Vec<&'a T>
@@ -675,7 +675,7 @@ fn augment_intersection<'a, V: Weight, M1: Matroid<V>, M2: Matroid<V>>(
     if let Some((_, path)) = sources
         .iter()
         .flat_map(|i| graph.bellman_ford(*i, &destinations))
-        .chain(singleton_paths.into_iter())
+        .chain(singleton_paths)
         .min_by_key(|(d, path)| (*d, path.len()))
     {
         for i in path {
@@ -783,7 +783,7 @@ impl ExchangeGraph {
     }
 
     /// Iterator on the paths reaching `i`
-    fn iter_path<'a>(&'a self, i: usize) -> impl Iterator<Item = usize> + 'a {
+    fn iter_path(&self, i: usize) -> impl Iterator<Item = usize> + '_ {
         let mut current = Some(i);
         std::iter::from_fn(move || {
             if let Some(i) = current {
@@ -862,7 +862,7 @@ impl ExchangeGraph {
                 // for that one, materialize the path
                 .map(|i| {
                     let path: Vec<usize> = self.iter_path(*i).collect();
-                    assert!(path.len() > 0);
+                    assert!(!path.is_empty());
                     (self.distance[*i].unwrap(), path)
                 })
         } else {
