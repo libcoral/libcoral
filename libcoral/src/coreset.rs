@@ -38,8 +38,9 @@ impl WeightCoresetPoints for WeightByCount {
 
 /// "extract" the coreset points from the subset pertaining
 /// to the a given center. The function is presented with a slice of
-/// indices into the dataset vectors as well as the (optional) ancillary data
+/// indices into the dataset vectors as well as the (optional) ancillary data.
 pub trait ExtractCoresetPoints {
+    /// Returns an array of indices into the data pointing to the extracted coreset points.
     fn extract_coreset_points<S: Data<Elem = f32>, A>(
         &self,
         data: &ArrayBase<S, Ix2>,
@@ -71,6 +72,13 @@ pub trait Compose {
     fn compose(a: Self, b: Self) -> Self;
 }
 
+impl<T: Clone> Compose for Vec<T> {
+    fn compose(mut a: Self, b: Self) -> Self {
+        a.extend_from_slice(&b);
+        a
+    }
+}
+
 impl<T: Copy> Compose for Array1<T> {
     fn compose(a: Self, b: Self) -> Self {
         concatenate![Axis(0), a, b]
@@ -90,14 +98,18 @@ impl<T: Copy> Compose for ArrayD<T> {
 }
 
 #[derive(Clone)]
-pub struct FittedCoreset {
+pub struct FittedCoreset<A>
+where
+    A: Clone,
+{
     coreset_points: Array2<f32>,
+    ancillary: Option<Vec<A>>,
     radius: Array1<f32>,
     weights: ArrayD<usize>,
     assignment: Array1<usize>,
 }
 
-impl FittedCoreset {
+impl<A: Clone> FittedCoreset<A> {
     pub fn points(&self) -> ArrayView2<f32> {
         self.coreset_points.view()
     }
@@ -111,10 +123,15 @@ impl FittedCoreset {
     }
 }
 
-impl Compose for FittedCoreset {
+impl<A: Clone> Compose for FittedCoreset<A> {
     fn compose(a: Self, b: Self) -> Self {
+        let ancillary = a
+            .ancillary
+            .zip(b.ancillary)
+            .map(|(a, b)| Compose::compose(a, b));
         Self {
             coreset_points: Compose::compose(a.coreset_points, b.coreset_points),
+            ancillary,
             radius: Compose::compose(a.radius, b.radius),
             weights: Compose::compose(a.weights, b.weights),
             assignment: Compose::compose(a.assignment, b.assignment),
@@ -185,11 +202,11 @@ impl<
         Self { threads, ..self }
     }
 
-    pub fn fit<S: Data<Elem = f32>, A: Send + Sync>(
+    pub fn fit<S: Data<Elem = f32>, A: Send + Sync + Clone>(
         &self,
         data: &ArrayBase<S, Ix2>,
         ancillary: Option<&[A]>,
-    ) -> FittedCoreset {
+    ) -> FittedCoreset<A> {
         if self.threads == 1 {
             self.fit_sequential(data, ancillary)
         } else {
@@ -197,11 +214,11 @@ impl<
         }
     }
 
-    fn fit_sequential<S: Data<Elem = f32>, A>(
+    fn fit_sequential<S: Data<Elem = f32>, A: Clone>(
         &self,
         data: &ArrayBase<S, Ix2>,
         ancillary: Option<&[A]>,
-    ) -> FittedCoreset {
+    ) -> FittedCoreset<A> {
         use crate::gmm::*;
 
         let (coreset_points, assignment, radius) = greedy_minimum_maximum(data, self.tau);
@@ -233,19 +250,29 @@ impl<
         } else {
             weight_by_count(&assignment)
         };
+
+        let coreset_ancillary = ancillary.map(|ancillary| {
+            let mut out = Vec::with_capacity(coreset_points.len());
+            for i in coreset_points.iter() {
+                out.push(ancillary[*i].clone());
+            }
+            out
+        });
+
         FittedCoreset {
             coreset_points: data.select(Axis(0), coreset_points.as_slice().unwrap()),
+            ancillary: coreset_ancillary,
             radius,
             weights,
             assignment: assignment + self.index_offset,
         }
     }
 
-    fn fit_parallel<S: Data<Elem = f32>, A: Send + Sync>(
+    fn fit_parallel<S: Data<Elem = f32>, A: Send + Sync + Clone>(
         &self,
         data: &ArrayBase<S, Ix2>,
         ancillary: Option<&[A]>,
-    ) -> FittedCoreset {
+    ) -> FittedCoreset<A> {
         let n_chunks = self.threads;
         let chunk_size: usize = data.nchunks_size(n_chunks);
         let chunks = data.nchunks(n_chunks);

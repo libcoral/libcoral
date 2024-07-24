@@ -159,9 +159,9 @@ pub trait TransversalMatroidElement {
     fn topics(&self) -> &[u32];
 }
 
-impl TransversalMatroidElement for Vec<u32> {
+impl<V: AsRef<[u32]>> TransversalMatroidElement for V {
     fn topics(&self) -> &[u32] {
-        self
+        self.as_ref()
     }
 }
 
