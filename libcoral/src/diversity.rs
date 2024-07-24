@@ -1,6 +1,9 @@
+use std::collections::BTreeSet;
+
 use crate::{
     coreset::CoresetBuilder,
     gmm::{compute_sq_norms, eucl, greedy_minimum_maximum},
+    matroid::Matroid,
 };
 use ndarray::{prelude::*, Data};
 
@@ -57,6 +60,41 @@ impl DiversityKind {
                     for j in 0..i {
                         let d = eucl(&data.row(i), &data.row(j), sq_norms[i], sq_norms[j]);
                         sum += d;
+                    }
+                }
+                sum
+            }
+        }
+    }
+
+    fn cost_subset<S: Data<Elem = f32>>(
+        &self,
+        data: &ArrayBase<S, Ix2>,
+        subset: &BTreeSet<usize>,
+    ) -> f32 {
+        match self {
+            Self::RemoteEdge => {
+                let sq_norms = compute_sq_norms(data);
+                let mut min = f32::INFINITY;
+                for &i in subset.iter() {
+                    for &j in subset.iter() {
+                        if i < j {
+                            let d = eucl(&data.row(i), &data.row(j), sq_norms[i], sq_norms[j]);
+                            min = min.min(d);
+                        }
+                    }
+                }
+                min
+            }
+            Self::RemoteClique => {
+                let sq_norms = compute_sq_norms(data);
+                let mut sum = 0.0;
+                for &i in subset.iter() {
+                    for &j in subset.iter() {
+                        if i < j {
+                            let d = eucl(&data.row(i), &data.row(j), sq_norms[i], sq_norms[j]);
+                            sum += d;
+                        }
                     }
                 }
                 sum
@@ -192,4 +230,60 @@ fn maximum_weight_matching<S: Data<Elem = f32>>(
     }
 
     result.into()
+}
+
+/// Runs the local search algorithm on the given data and ancillary information.
+/// The ancillary information is used to enfoce the given matroid constraint.
+fn local_search<A, S, M>(
+    data: &ArrayBase<S, Ix2>,
+    ancillary: &[A],
+    k: usize,
+    epsilon: f32,
+    matroid: M,
+    diversity: DiversityKind,
+) -> Array1<usize>
+where
+    S: Data<Elem = f32>,
+    M: Matroid<A>,
+{
+    if data.nrows() <= k {
+        return Array1::from_iter(0..data.nrows());
+    }
+
+    // Pick an initial arbitrary maximal independent set
+    let mut iset = matroid
+        .independent_set_of_size(ancillary, k)
+        .expect("matroid rank smaller than k");
+
+    let mut found_improving_swap = true;
+
+    while found_improving_swap {
+        found_improving_swap = false;
+        let threshold = (1.0 + epsilon / k as f32) * diversity.cost_subset(data, &iset);
+        for i in 0..data.nrows() {
+            if found_improving_swap {
+                break;
+            }
+            if iset.contains(&i) {
+                for j in 0..i {
+                    if !iset.contains(&j) {
+                        iset.remove(&i);
+                        iset.insert(j);
+
+                        if matroid.is_independent(ancillary, &iset)
+                            && diversity.cost_subset(data, &iset) > threshold
+                        {
+                            found_improving_swap = true;
+                            break;
+                        } else {
+                            iset.remove(&j);
+                            iset.insert(i);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Array1::from_iter(iset)
 }
