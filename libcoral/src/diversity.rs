@@ -244,7 +244,7 @@ fn local_search<A, S, M>(
 ) -> Array1<usize>
 where
     S: Data<Elem = f32>,
-    M: Matroid<A>,
+    M: Matroid<Item = A>,
 {
     if data.nrows() <= k {
         return Array1::from_iter(0..data.nrows());
