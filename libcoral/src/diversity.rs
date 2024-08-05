@@ -46,7 +46,7 @@ impl DiversityKind {
         data: &ArrayBase<S, Ix2>,
         ancillary: &[A],
         k: usize,
-        matroid: M,
+        matroid: &M,
         epsilon: f32,
     ) -> Array1<usize> {
         assert!(data.nrows() > k);
@@ -121,65 +121,96 @@ impl DiversityKind {
     }
 }
 
-pub struct DiversityMaximization {
+pub struct DiversityMaximization<M: Matroid> {
     k: usize,
     kind: DiversityKind,
-    solution: Option<Array1<usize>>,
     coreset_size: Option<usize>,
     threads: usize,
+    epsilon: f32,
+    matroid: Option<M>,
 }
 
-impl DiversityMaximization {
+impl DiversityMaximization<()> {
     pub fn new(k: usize, kind: DiversityKind) -> Self {
         Self {
             k,
             kind,
-            solution: None,
             coreset_size: None,
             threads: 1,
+            epsilon: 0.01,
+            matroid: None,
+        }
+    }
+}
+
+impl<M: Matroid> DiversityMaximization<M>
+where
+    M::Item: Send + Sync + Clone,
+{
+    pub fn with_threads(self, threads: usize) -> Self {
+        Self { threads, ..self }
+    }
+
+    pub fn with_matroid<M2: Matroid>(self, matroid: M2) -> DiversityMaximization<M2> {
+        DiversityMaximization {
+            matroid: Some(matroid),
+            k: self.k,
+            kind: self.kind,
+            coreset_size: self.coreset_size,
+            epsilon: self.epsilon,
+            threads: self.threads,
         }
     }
 
     pub fn with_coreset(self, coreset_size: usize) -> Self {
-        assert!(coreset_size > self.k);
         Self {
             coreset_size: Some(coreset_size),
             ..self
         }
     }
 
-    pub fn with_threads(self, threads: usize) -> Self {
-        assert!(threads >= 1);
-        Self { threads, ..self }
-    }
-
-    pub fn cost<S: Data<Elem = f32>>(&mut self, data: &ArrayBase<S, Ix2>) -> f32 {
-        self.kind.cost(data)
-    }
-
-    pub fn fit<S: Data<Elem = f32>>(&mut self, data: &ArrayBase<S, Ix2>) {
-        match (self.threads, self.coreset_size) {
-            (1, None) => {
-                self.solution.replace(self.kind.solve(data, self.k));
+    /// Solves the diversity maximization problem on the given data. Ancillary data is required if
+    /// the problem is constrained by a matroid.
+    ///
+    /// Returns an integer array of the indices of the points included in the solution.
+    pub fn solve<S: Data<Elem = f32>>(
+        &self,
+        data: &ArrayBase<S, Ix2>,
+        ancillary: Option<&[M::Item]>,
+    ) -> Array1<usize> {
+        if let Some(coreset_size) = self.coreset_size {
+            let coreset = CoresetBuilder::with_tau(coreset_size)
+                .with_threads(self.threads)
+                .fit(data, ancillary);
+            if let Some(matroid) = self.matroid.as_ref() {
+                self.kind.solve_matroid(
+                    &coreset.points(),
+                    coreset
+                        .ancillary()
+                        .expect("ancillary data is required with a matroid"),
+                    self.k,
+                    matroid,
+                    self.epsilon,
+                )
+            } else {
+                self.kind.solve(&coreset.points(), self.k)
             }
-            (1, Some(coreset_size)) => {
-                let coreset = CoresetBuilder::with_tau(coreset_size).fit::<_, ()>(data, None);
-                let data = coreset.points();
-                self.solution.replace(self.kind.solve(&data, self.k));
+        } else {
+            if self.threads > 1 {
+                log::warn!("no coreset is being constructed, use only a single thread");
             }
-            (threads, Some(coreset_size)) => {
-                let coreset = CoresetBuilder::with_tau(coreset_size)
-                    .with_threads(threads)
-                    .fit::<_, ()>(data, None);
-                let data = coreset.points();
-                self.solution.replace(self.kind.solve(&data, self.k));
+            if let Some(matroid) = self.matroid.as_ref() {
+                self.kind.solve_matroid(
+                    data,
+                    ancillary.expect("ancillary data is required with a matroid"),
+                    self.k,
+                    matroid,
+                    self.epsilon,
+                )
+            } else {
+                self.kind.solve(data, self.k)
             }
-            _ => panic!("you should specify a coreset size"),
         }
-    }
-
-    pub fn get_solution_indices(&self) -> Option<Array1<usize>> {
-        self.solution.clone()
     }
 }
 
@@ -257,7 +288,7 @@ fn local_search<A, S, M>(
     ancillary: &[A],
     k: usize,
     epsilon: f32,
-    matroid: M,
+    matroid: &M,
     diversity: DiversityKind,
 ) -> Array1<usize>
 where

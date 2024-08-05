@@ -110,6 +110,9 @@ where
 }
 
 impl<A: Clone> FittedCoreset<A> {
+    pub fn ancillary(&self) -> Option<&[A]> {
+        self.ancillary.as_deref()
+    }
     pub fn points(&self) -> ArrayView2<f32> {
         self.coreset_points.view()
     }

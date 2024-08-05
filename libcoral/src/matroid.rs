@@ -1,6 +1,6 @@
 //! Implementation of several related matroid utilities.
 
-use std::{cell::RefCell, collections::BTreeSet};
+use std::collections::BTreeSet;
 
 pub trait Matroid {
     /// The type of the items of the sets over which we have the matroid
@@ -32,6 +32,13 @@ pub trait Matroid {
 
         // There is no independent set of the given size
         None
+    }
+}
+
+impl Matroid for () {
+    type Item = ();
+    fn is_independent(&self, _set: &[Self::Item], _subset: &BTreeSet<usize>) -> bool {
+        unreachable!()
     }
 }
 
