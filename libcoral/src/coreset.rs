@@ -40,19 +40,21 @@ impl WeightCoresetPoints for WeightByCount {
 /// to the a given center. The function is presented with a slice of
 /// indices into the dataset vectors as well as the (optional) ancillary data.
 pub trait ExtractCoresetPoints {
+    type Ancillary: Clone + Send + Sync;
     /// Returns an array of indices into the data pointing to the extracted coreset points.
-    fn extract_coreset_points<S: Data<Elem = f32>, A>(
+    fn extract_coreset_points<S: Data<Elem = f32>>(
         &self,
         data: &ArrayBase<S, Ix2>,
-        ancillary: Option<&[A]>,
+        ancillary: Option<&[Self::Ancillary]>,
         assigned: &[usize],
     ) -> Array1<usize>;
 }
 impl ExtractCoresetPoints for () {
-    fn extract_coreset_points<S: Data<Elem = f32>, A>(
+    type Ancillary = ();
+    fn extract_coreset_points<S: Data<Elem = f32>>(
         &self,
         _data: &ArrayBase<S, Ix2>,
-        _ancillary: Option<&[A]>,
+        _ancillary: Option<&[Self::Ancillary]>,
         _assigned: &[usize],
     ) -> Array1<usize> {
         unreachable!("just to appease the type checker")
@@ -216,11 +218,11 @@ impl<
         Self { threads, ..self }
     }
 
-    pub fn fit<S: Data<Elem = f32>, A: Send + Sync + Clone>(
+    pub fn fit<S: Data<Elem = f32>>(
         &self,
         data: &ArrayBase<S, Ix2>,
-        ancillary: Option<&[A]>,
-    ) -> FittedCoreset<A> {
+        ancillary: Option<&[E::Ancillary]>,
+    ) -> FittedCoreset<E::Ancillary> {
         if self.threads == 1 {
             self.fit_sequential(data, ancillary)
         } else {
@@ -228,11 +230,11 @@ impl<
         }
     }
 
-    fn fit_sequential<S: Data<Elem = f32>, A: Clone>(
+    fn fit_sequential<S: Data<Elem = f32>>(
         &self,
         data: &ArrayBase<S, Ix2>,
-        ancillary: Option<&[A]>,
-    ) -> FittedCoreset<A> {
+        ancillary: Option<&[E::Ancillary]>,
+    ) -> FittedCoreset<E::Ancillary> {
         use crate::gmm::*;
 
         let (coreset_points, assignment, radius) = greedy_minimum_maximum(data, self.tau);
@@ -283,11 +285,11 @@ impl<
         }
     }
 
-    fn fit_parallel<S: Data<Elem = f32>, A: Send + Sync + Clone>(
+    fn fit_parallel<S: Data<Elem = f32>>(
         &self,
         data: &ArrayBase<S, Ix2>,
-        ancillary: Option<&[A]>,
-    ) -> FittedCoreset<A> {
+        ancillary: Option<&[E::Ancillary]>,
+    ) -> FittedCoreset<E::Ancillary> {
         let n_chunks = self.threads;
         let chunk_size: usize = data.nchunks_size(n_chunks);
         let chunks = data.nchunks(n_chunks);

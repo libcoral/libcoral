@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    coreset::CoresetBuilder,
+    coreset::{CoresetBuilder, ExtractCoresetPoints},
     gmm::{compute_sq_norms, eucl, greedy_minimum_maximum},
     matroid::Matroid,
 };
@@ -179,25 +179,26 @@ where
         ancillary: Option<&[M::Item]>,
     ) -> Array1<usize> {
         if let Some(coreset_size) = self.coreset_size {
-            let coreset = CoresetBuilder::with_tau(coreset_size)
-                // TODO: add extractor for matroid points
-                .with_threads(self.threads)
-                .fit(data, ancillary);
-            let indices = if let Some(matroid) = self.matroid.as_ref() {
-                self.kind.solve_matroid(
-                    &coreset.points(),
-                    coreset
-                        .ancillary()
-                        .expect("ancillary data is required with a matroid"),
-                    self.k,
-                    matroid,
-                    self.epsilon,
-                )
-            } else {
-                self.kind.solve(&coreset.points(), self.k)
-            };
-            // reverse the indices to the original data ones
-            coreset.invert_index(&indices)
+            todo!()
+            // let coreset = CoresetBuilder::with_tau(coreset_size)
+            //     // TODO: add extractor for matroid points
+            //     .with_threads(self.threads)
+            //     .fit(data, ancillary);
+            // let indices = if let Some(matroid) = self.matroid.as_ref() {
+            //     self.kind.solve_matroid(
+            //         &coreset.points(),
+            //         coreset
+            //             .ancillary()
+            //             .expect("ancillary data is required with a matroid"),
+            //         self.k,
+            //         matroid,
+            //         self.epsilon,
+            //     )
+            // } else {
+            //     self.kind.solve(&coreset.points(), self.k)
+            // };
+            // // reverse the indices to the original data ones
+            // coreset.invert_index(&indices)
         } else {
             if self.threads > 1 {
                 log::warn!("no coreset is being constructed, use only a single thread");
@@ -214,6 +215,25 @@ where
                 self.kind.solve(data, self.k)
             }
         }
+    }
+}
+
+struct MatroidExtractCoresetPoints<M: Matroid> {
+    matroid: M,
+}
+
+impl<M: Matroid> ExtractCoresetPoints for MatroidExtractCoresetPoints<M>
+where
+    M::Item: Clone + Send + Sync,
+{
+    type Ancillary = M::Item;
+    fn extract_coreset_points<S: Data<Elem = f32>>(
+        &self,
+        data: &ArrayBase<S, Ix2>,
+        ancillary: Option<&[Self::Ancillary]>,
+        assigned: &[usize],
+    ) -> Array1<usize> {
+        todo!()
     }
 }
 
