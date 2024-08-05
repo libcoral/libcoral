@@ -7,6 +7,7 @@ use crate::{
 };
 use ndarray::{prelude::*, Data};
 
+#[derive(Clone, Copy, Debug)]
 pub enum DiversityKind {
     /// Maximize the minimum distance
     RemoteEdge,
@@ -37,6 +38,23 @@ impl DiversityKind {
                     sol2
                 }
             }
+        }
+    }
+
+    fn solve_matroid<S: Data<Elem = f32>, A, M: Matroid<Item = A>>(
+        &self,
+        data: &ArrayBase<S, Ix2>,
+        ancillary: &[A],
+        k: usize,
+        matroid: M,
+        epsilon: f32,
+    ) -> Array1<usize> {
+        assert!(data.nrows() > k);
+        match self {
+            Self::RemoteEdge => {
+                unimplemented!("no known approximation algorithm exists, use explicit enumeration on a small enough coreset")
+            }
+            Self::RemoteClique => local_search(data, ancillary, k, epsilon, matroid, *self),
         }
     }
 
