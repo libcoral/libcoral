@@ -3,7 +3,7 @@ use std::{collections::BTreeSet, marker::PhantomData};
 use crate::{
     coreset::{CoresetBuilder, ExtractCoresetPoints},
     gmm::{compute_sq_norms, eucl, greedy_minimum_maximum},
-    matroid::{Matroid, PartitionMatroid},
+    matroid::{Matroid, PartitionMatroid, TransversalMatroid},
 };
 use ndarray::{prelude::*, Data};
 
@@ -260,16 +260,21 @@ where
 /// delegates that is not an independent set. This is useful for instance for the transversal
 /// matroid in some corner cases (see section 3.1.2 of the paper).
 pub trait SelectDelegates<A> {
-    fn select_delegates(&self, k: usize, ancillary: &[A], assigned: &[usize]) -> Array1<usize>;
+    fn select_delegates(&self, k: usize, ground_set: &[A], assigned: &[usize]) -> Array1<usize>;
 }
 
 impl SelectDelegates<usize> for PartitionMatroid {
-    fn select_delegates(&self, k: usize, ancillary: &[usize], assigned: &[usize]) -> Array1<usize> {
+    fn select_delegates(
+        &self,
+        k: usize,
+        ground_set: &[usize],
+        assigned: &[usize],
+    ) -> Array1<usize> {
         let mut is = BTreeSet::new();
 
         for i in assigned {
             is.insert(*i);
-            if !self.is_independent(ancillary, &is) {
+            if !self.is_independent(ground_set, &is) {
                 is.remove(i);
             }
             if is.len() == k {
@@ -277,6 +282,38 @@ impl SelectDelegates<usize> for PartitionMatroid {
             }
         }
         Array1::from_iter(is)
+    }
+}
+
+impl SelectDelegates<Vec<usize>> for TransversalMatroid {
+    fn select_delegates(
+        &self,
+        k: usize,
+        ground_set: &[Vec<usize>],
+        assigned: &[usize],
+    ) -> Array1<usize> {
+        if let Some(iset) = self.independent_set_of_size_in(ground_set, assigned.iter().copied(), k)
+        {
+            Array1::from_iter(iset)
+        } else {
+            // we have to pick at most k representatives from each topic if there is
+            // no independent set of size k
+            let mut counts = vec![0; self.num_topics()];
+            let mut selection = Vec::new();
+            for &idx in assigned {
+                let should_add = ground_set[idx].iter().any(|topic| counts[*topic] < k);
+                if should_add {
+                    selection.push(idx);
+                    for &topic in ground_set[idx].iter() {
+                        counts[topic] += 1;
+                    }
+                    if counts.iter().all(|cnt| *cnt >= k) {
+                        break;
+                    }
+                }
+            }
+            Array1::from_vec(selection)
+        }
     }
 }
 

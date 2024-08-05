@@ -75,3 +75,65 @@ impl Matroid for PartitionMatroid {
         true
     }
 }
+
+pub struct TransversalMatroid {
+    /// the maximum topic value
+    topics: usize,
+}
+
+impl Matroid for TransversalMatroid {
+    type Item = Vec<usize>;
+
+    fn is_independent(&self, ground_set: &[Self::Item], subset: &BTreeSet<usize>) -> bool {
+        subset.len() <= self.topics
+            && self.maximum_matching_size(ground_set, subset) == subset.len()
+    }
+}
+
+impl TransversalMatroid {
+    pub(crate) fn num_topics(&self) -> usize {
+        self.topics + 1
+    }
+
+    fn maximum_matching_size(&self, ground_set: &[Vec<usize>], set: &BTreeSet<usize>) -> usize {
+        let n_topics = self.topics + 1;
+        let mut visited = vec![false; n_topics];
+        let mut representatives: Vec<Option<usize>> = vec![None; n_topics];
+        for &idx in set {
+            // reset the flags
+            visited.fill(false);
+            // try to accomodate the new element
+            self.find_matching_for(ground_set, idx, &mut representatives, &mut visited);
+        }
+
+        representatives.iter().filter(|opt| opt.is_some()).count()
+    }
+
+    fn find_matching_for(
+        &self,
+        ground_set: &[Vec<usize>],
+        idx: usize,
+        representatives: &mut [Option<usize>],
+        visited: &mut [bool],
+    ) -> bool {
+        for &topic in ground_set[idx].iter() {
+            assert!(topic <= self.topics);
+            if !visited[topic] {
+                visited[topic] = true;
+                let can_set = if let Some(displacing_idx) = representatives[topic] {
+                    // try to move the representative to another set
+                    self.find_matching_for(ground_set, displacing_idx, representatives, visited)
+                } else {
+                    true
+                };
+
+                if can_set {
+                    representatives[topic].replace(idx);
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+}
