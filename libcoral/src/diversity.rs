@@ -1,9 +1,9 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, marker::PhantomData};
 
 use crate::{
     coreset::{CoresetBuilder, ExtractCoresetPoints},
     gmm::{compute_sq_norms, eucl, greedy_minimum_maximum},
-    matroid::Matroid,
+    matroid::{Matroid, PartitionMatroid},
 };
 use ndarray::{prelude::*, Data};
 
@@ -143,7 +143,7 @@ impl DiversityMaximization<()> {
     }
 }
 
-impl<M: Matroid> DiversityMaximization<M>
+impl<M: Matroid + SelectDelegates<M::Item> + Sync> DiversityMaximization<M>
 where
     M::Item: Send + Sync + Clone,
 {
@@ -179,26 +179,29 @@ where
         ancillary: Option<&[M::Item]>,
     ) -> Array1<usize> {
         if let Some(coreset_size) = self.coreset_size {
-            todo!()
-            // let coreset = CoresetBuilder::with_tau(coreset_size)
-            //     // TODO: add extractor for matroid points
-            //     .with_threads(self.threads)
-            //     .fit(data, ancillary);
-            // let indices = if let Some(matroid) = self.matroid.as_ref() {
-            //     self.kind.solve_matroid(
-            //         &coreset.points(),
-            //         coreset
-            //             .ancillary()
-            //             .expect("ancillary data is required with a matroid"),
-            //         self.k,
-            //         matroid,
-            //         self.epsilon,
-            //     )
-            // } else {
-            //     self.kind.solve(&coreset.points(), self.k)
-            // };
-            // // reverse the indices to the original data ones
-            // coreset.invert_index(&indices)
+            if let Some(matroid) = self.matroid.as_ref() {
+                let coreset = CoresetBuilder::with_tau(coreset_size)
+                    .with_extractor(MatroidExtractCoresetPoints::new(self.k, matroid))
+                    .with_threads(self.threads)
+                    .fit(data, ancillary);
+                let indices = self.kind.solve_matroid(
+                    &coreset.points(),
+                    coreset
+                        .ancillary()
+                        .expect("ancillary data is required with a matroid"),
+                    self.k,
+                    matroid,
+                    self.epsilon,
+                );
+                coreset.invert_index(&indices)
+            } else {
+                let coreset = CoresetBuilder::with_tau(coreset_size)
+                    .with_threads(self.threads)
+                    .fit(data, None);
+                let indices = self.kind.solve(&coreset.points(), self.k);
+                // reverse the indices to the original data ones
+                coreset.invert_index(&indices)
+            }
         } else {
             if self.threads > 1 {
                 log::warn!("no coreset is being constructed, use only a single thread");
@@ -218,22 +221,62 @@ where
     }
 }
 
-struct MatroidExtractCoresetPoints<M: Matroid> {
-    matroid: M,
+#[derive(Clone)]
+struct MatroidExtractCoresetPoints<'matroid, M: Matroid + SelectDelegates<M::Item> + Sync>
+where
+    M::Item: Clone + Send + Sync,
+{
+    k: usize,
+    matroid: &'matroid M,
+}
+impl<'matroid, M: Matroid + SelectDelegates<M::Item> + Sync>
+    MatroidExtractCoresetPoints<'matroid, M>
+where
+    M::Item: Clone + Send + Sync,
+{
+    fn new(k: usize, matroid: &'matroid M) -> Self {
+        Self { k, matroid }
+    }
 }
 
-impl<M: Matroid> ExtractCoresetPoints for MatroidExtractCoresetPoints<M>
+impl<'matroid, M: Matroid + SelectDelegates<M::Item> + Sync> ExtractCoresetPoints
+    for MatroidExtractCoresetPoints<'matroid, M>
 where
     M::Item: Clone + Send + Sync,
 {
     type Ancillary = M::Item;
     fn extract_coreset_points<S: Data<Elem = f32>>(
         &self,
-        data: &ArrayBase<S, Ix2>,
+        _data: &ArrayBase<S, Ix2>,
         ancillary: Option<&[Self::Ancillary]>,
         assigned: &[usize],
     ) -> Array1<usize> {
-        todo!()
+        let ancillary = ancillary.expect("ancillary data is required with matroids");
+        self.matroid.select_delegates(self.k, ancillary, assigned)
+    }
+}
+
+/// This trait gives the chance to some matroids (e.g. transversal matroids) to select a set of
+/// delegates that is not an independent set. This is useful for instance for the transversal
+/// matroid in some corner cases (see section 3.1.2 of the paper).
+pub trait SelectDelegates<A> {
+    fn select_delegates(&self, k: usize, ancillary: &[A], assigned: &[usize]) -> Array1<usize>;
+}
+
+impl SelectDelegates<usize> for PartitionMatroid {
+    fn select_delegates(&self, k: usize, ancillary: &[usize], assigned: &[usize]) -> Array1<usize> {
+        let mut is = BTreeSet::new();
+
+        for i in assigned {
+            is.insert(*i);
+            if !self.is_independent(ancillary, &is) {
+                is.remove(i);
+            }
+            if is.len() == k {
+                break;
+            }
+        }
+        Array1::from_iter(is)
     }
 }
 

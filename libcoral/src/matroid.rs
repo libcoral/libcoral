@@ -14,13 +14,22 @@ pub trait Matroid {
     /// input vector. If no independent set of size `k` is present (i.e. the matroid has a smaller
     /// rank), then returns None.
     fn independent_set_of_size(&self, set: &[Self::Item], k: usize) -> Option<BTreeSet<usize>> {
+        self.independent_set_of_size_in(set, 0..set.len(), k)
+    }
+
+    fn independent_set_of_size_in<I: IntoIterator<Item = usize>>(
+        &self,
+        set: &[Self::Item],
+        subset: I,
+        k: usize,
+    ) -> Option<BTreeSet<usize>> {
         if set.len() < k {
             return None;
         }
 
         let mut is = BTreeSet::new();
 
-        for i in 0..set.len() {
+        for i in subset {
             is.insert(i);
             if !self.is_independent(set, &is) {
                 is.remove(&i);
