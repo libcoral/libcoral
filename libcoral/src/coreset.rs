@@ -155,11 +155,10 @@ impl<A: Clone> Compose for FittedCoreset<A> {
     }
 }
 
-#[derive(Clone)]
-pub struct CoresetBuilder<E: ExtractCoresetPoints + Clone, W: WeightCoresetPoints + Clone> {
+// #[derive(Clone)]
+pub struct CoresetBuilder<E: ExtractCoresetPoints, W: WeightCoresetPoints> {
     tau: usize,
     threads: usize,
-    index_offset: usize,
     weighter: Option<W>,
     extractor: Option<E>,
 }
@@ -169,48 +168,28 @@ impl CoresetBuilder<(), ()> {
         Self {
             tau,
             threads: 1,
-            index_offset: 0,
             weighter: None,
             extractor: None,
         }
     }
 }
 
-impl<
-        E: ExtractCoresetPoints + Send + Sync + Clone,
-        W: WeightCoresetPoints + Send + Sync + Clone,
-    > CoresetBuilder<E, W>
-{
-    pub fn with_extractor<E2: ExtractCoresetPoints + Clone>(
-        self,
-        extractor: E2,
-    ) -> CoresetBuilder<E2, W> {
+impl<E: ExtractCoresetPoints + Sync, W: WeightCoresetPoints + Sync> CoresetBuilder<E, W> {
+    pub fn with_extractor<E2: ExtractCoresetPoints>(self, extractor: E2) -> CoresetBuilder<E2, W> {
         CoresetBuilder {
             tau: self.tau,
             threads: self.threads,
-            index_offset: self.index_offset,
             weighter: None,
             extractor: Some(extractor),
         }
     }
 
-    pub fn with_weighter<W2: WeightCoresetPoints + Clone>(
-        self,
-        weighter: W2,
-    ) -> CoresetBuilder<E, W2> {
+    pub fn with_weighter<W2: WeightCoresetPoints>(self, weighter: W2) -> CoresetBuilder<E, W2> {
         CoresetBuilder {
             tau: self.tau,
             threads: self.threads,
-            index_offset: self.index_offset,
             weighter: Some(weighter),
             extractor: self.extractor,
-        }
-    }
-
-    pub fn with_index_offset(self, index_offset: usize) -> CoresetBuilder<E, W> {
-        Self {
-            index_offset,
-            ..self
         }
     }
 
@@ -234,6 +213,15 @@ impl<
         &self,
         data: &ArrayBase<S, Ix2>,
         ancillary: Option<&[E::Ancillary]>,
+    ) -> FittedCoreset<E::Ancillary> {
+        self.fit_sequential_offset(data, ancillary, 0)
+    }
+
+    fn fit_sequential_offset<S: Data<Elem = f32>>(
+        &self,
+        data: &ArrayBase<S, Ix2>,
+        ancillary: Option<&[E::Ancillary]>,
+        index_offset: usize,
     ) -> FittedCoreset<E::Ancillary> {
         use crate::gmm::*;
 
@@ -277,11 +265,11 @@ impl<
 
         FittedCoreset {
             coreset_points: data.select(Axis(0), coreset_indices.as_slice().unwrap()),
-            coreset_indices: coreset_indices + self.index_offset,
+            coreset_indices: coreset_indices + index_offset,
             ancillary: coreset_ancillary,
             radius,
             weights,
-            assignment: assignment + self.index_offset,
+            assignment: assignment + index_offset,
         }
     }
 
@@ -301,9 +289,9 @@ impl<
                 out.iter_mut().zip(chunks.zip(ancillary_chunks)).enumerate()
             {
                 let offset = i * chunk_size;
-                let builder = self.clone().with_index_offset(offset);
+                let builder = self;
                 let h = scope.spawn(move || {
-                    out.replace(builder.fit_sequential(&chunk, ancillary_chunk));
+                    out.replace(builder.fit_sequential_offset(&chunk, ancillary_chunk, offset));
                 });
                 handles.push(h);
             }
