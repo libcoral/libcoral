@@ -102,6 +102,8 @@ pub struct FittedCoreset<A>
 where
     A: Clone,
 {
+    /// the indices _in the original dataset_
+    coreset_indices: Array1<usize>,
     coreset_points: Array2<f32>,
     ancillary: Option<Vec<A>>,
     radius: Array1<f32>,
@@ -124,6 +126,14 @@ impl<A: Clone> FittedCoreset<A> {
     pub fn weights(&self) -> ArrayViewD<usize> {
         self.weights.view()
     }
+
+    /// Maps the given indices into the coreset to indices in the original dataset
+    pub fn invert_index<S: Data<Elem = usize>>(
+        &self,
+        indices: &ArrayBase<S, Ix1>,
+    ) -> Array1<usize> {
+        indices.map(|i| self.coreset_indices[*i])
+    }
 }
 
 impl<A: Clone> Compose for FittedCoreset<A> {
@@ -133,6 +143,7 @@ impl<A: Clone> Compose for FittedCoreset<A> {
             .zip(b.ancillary)
             .map(|(a, b)| Compose::compose(a, b));
         Self {
+            coreset_indices: Compose::compose(a.coreset_indices, b.coreset_indices),
             coreset_points: Compose::compose(a.coreset_points, b.coreset_points),
             ancillary,
             radius: Compose::compose(a.radius, b.radius),
@@ -227,7 +238,7 @@ impl<
         let (coreset_points, assignment, radius) = greedy_minimum_maximum(data, self.tau);
 
         // If we have an extractor, use it to get points for each coreset cluster
-        let (coreset_points, assignment, radius) = if let Some(extractor) = self.extractor.as_ref()
+        let (coreset_indices, assignment, radius) = if let Some(extractor) = self.extractor.as_ref()
         {
             let mut extended_idxs = Vec::new();
             let mut assigned = Vec::new();
@@ -249,21 +260,22 @@ impl<
         };
 
         let weights = if let Some(weighter) = self.weighter.as_ref() {
-            weighter.weight_coreset_points(coreset_points.len(), &assignment, ancillary)
+            weighter.weight_coreset_points(coreset_indices.len(), &assignment, ancillary)
         } else {
             weight_by_count(&assignment)
         };
 
         let coreset_ancillary = ancillary.map(|ancillary| {
-            let mut out = Vec::with_capacity(coreset_points.len());
-            for i in coreset_points.iter() {
+            let mut out = Vec::with_capacity(coreset_indices.len());
+            for i in coreset_indices.iter() {
                 out.push(ancillary[*i].clone());
             }
             out
         });
 
         FittedCoreset {
-            coreset_points: data.select(Axis(0), coreset_points.as_slice().unwrap()),
+            coreset_points: data.select(Axis(0), coreset_indices.as_slice().unwrap()),
+            coreset_indices: coreset_indices + self.index_offset,
             ancillary: coreset_ancillary,
             radius,
             weights,

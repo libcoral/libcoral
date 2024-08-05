@@ -180,9 +180,10 @@ where
     ) -> Array1<usize> {
         if let Some(coreset_size) = self.coreset_size {
             let coreset = CoresetBuilder::with_tau(coreset_size)
+                // TODO: add extractor for matroid points
                 .with_threads(self.threads)
                 .fit(data, ancillary);
-            if let Some(matroid) = self.matroid.as_ref() {
+            let indices = if let Some(matroid) = self.matroid.as_ref() {
                 self.kind.solve_matroid(
                     &coreset.points(),
                     coreset
@@ -194,7 +195,9 @@ where
                 )
             } else {
                 self.kind.solve(&coreset.points(), self.k)
-            }
+            };
+            // reverse the indices to the original data ones
+            coreset.invert_index(&indices)
         } else {
             if self.threads > 1 {
                 log::warn!("no coreset is being constructed, use only a single thread");
