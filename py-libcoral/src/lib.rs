@@ -197,6 +197,10 @@ impl PyDiversityMaximization {
         };
         sol.to_pyarray_bound(self_.py())
     }
+
+    fn cost(&self, data: PyReadonlyArray2<f32>) -> f32 {
+        self.kind.cost(&data.as_array())
+    }
 }
 
 #[pymodule]

@@ -2,3 +2,4 @@
 .direnv
 .venv
 py-libcoral/train-images-idx3-ubyte.gz
+py-libcoral/train-labels-idx1-ubyte.gz

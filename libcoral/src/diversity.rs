@@ -58,7 +58,7 @@ impl DiversityKind {
         }
     }
 
-    fn cost<S: Data<Elem = f32>>(&self, data: &ArrayBase<S, Ix2>) -> f32 {
+    pub fn cost<S: Data<Elem = f32>>(&self, data: &ArrayBase<S, Ix2>) -> f32 {
         match self {
             Self::RemoteEdge => {
                 let sq_norms = compute_sq_norms(data);
