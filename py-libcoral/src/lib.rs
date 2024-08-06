@@ -1,4 +1,8 @@
-use libcoral::coreset::{CoresetBuilder, FittedCoreset};
+use libcoral::{
+    coreset::{CoresetBuilder, FittedCoreset},
+    diversity::{DiversityKind, DiversityMaximization},
+    matroid::{PartitionMatroid, TransversalMatroid},
+};
 use numpy::*;
 use pyo3::prelude::*;
 
@@ -76,55 +80,131 @@ impl PyCoreset {
     }
 }
 
-// #[pyclass]
-// #[pyo3(name = "DiversityMaximization")]
-// pub struct PyDiversityMaximization {
-//     inner: DiversityMaximization,
-// }
-//
-// #[pymethods]
-// impl PyDiversityMaximization {
-//     #[new]
-//     #[pyo3(signature = (k, kind, coreset_size=None, num_threads=None))]
-//     fn new(k: usize, kind: &str, coreset_size: Option<usize>, num_threads: Option<usize>) -> Self {
-//         let kind = match kind {
-//             "remote-edge" | "edge" => DiversityKind::RemoteEdge,
-//             "remote-clique" | "clique" => DiversityKind::RemoteClique,
-//             _ => panic!("Wrong kind"),
-//         };
-//         let mut inner = DiversityMaximization::new(k, kind);
-//         if let Some(num_threads) = num_threads {
-//             let coreset_size = coreset_size.unwrap_or(1000);
-//             inner = inner.with_coreset(coreset_size).with_threads(num_threads)
-//         } else if let Some(coreset_size) = coreset_size {
-//             inner = inner.with_coreset(coreset_size);
-//         }
-//         Self { inner }
-//     }
-//
-//     fn cost<'py>(mut self_: PyRefMut<'py, Self>, data: PyReadonlyArray2<'py, f32>) -> f32 {
-//         self_.inner.cost(&data.as_array())
-//     }
-//
-//     fn fit<'py>(mut self_: PyRefMut<'py, Self>, data: PyReadonlyArray2<'py, f32>) {
-//         self_.inner.fit(&data.as_array());
-//     }
-//
-//     fn solution_indices(self_: PyRef<Self>) -> PyResult<Bound<PyArray1<usize>>> {
-//         let py = self_.py();
-//         self_
-//             .inner
-//             .get_solution_indices()
-//             .ok_or(PyValueError::new_err("model not trained"))
-//             .map(|sol| sol.into_pyarray_bound(py))
-//     }
-// }
+#[derive(FromPyObject, Clone)]
+enum MatroidDescriptionContent {
+    Partition(Vec<usize>),
+    Transversal(usize),
+}
+
+#[derive(Clone)]
+#[pyclass]
+pub struct MatroidDescription {
+    description: MatroidDescriptionContent,
+}
+
+#[pymethods]
+impl MatroidDescription {
+    #[new]
+    fn new(description: MatroidDescriptionContent) -> Self {
+        Self { description }
+    }
+}
+
+#[pyclass]
+#[pyo3(name = "DiversityMaximization")]
+pub struct PyDiversityMaximization {
+    k: usize,
+    kind: DiversityKind,
+    coreset_size: Option<usize>,
+    threads: usize,
+    epsilon: f32,
+    matroid_description: Option<MatroidDescription>,
+}
+
+#[pymethods]
+impl PyDiversityMaximization {
+    #[new]
+    #[pyo3(signature = (k, kind, coreset_size=None, num_threads=1, epsilon=0.01, matroid=None))]
+    fn new(
+        k: usize,
+        kind: &str,
+        coreset_size: Option<usize>,
+        num_threads: usize,
+        epsilon: f32,
+        matroid: Option<MatroidDescription>,
+    ) -> Self {
+        let kind = match kind {
+            "remote-edge" | "edge" => DiversityKind::RemoteEdge,
+            "remote-clique" | "clique" => DiversityKind::RemoteClique,
+            _ => panic!("Wrong kind"),
+        };
+        Self {
+            k,
+            kind,
+            coreset_size,
+            threads: num_threads,
+            epsilon,
+            matroid_description: matroid,
+        }
+    }
+
+    fn solve<'py>(
+        self_: PyRef<'py, Self>,
+        data: PyReadonlyArray2<'py, f32>,
+        ancillary: Option<Bound<'py, PyAny>>,
+    ) -> Bound<'py, PyArray1<usize>> {
+        let sol = if let Some(matroid) = self_.matroid_description.as_ref() {
+            match &matroid.description {
+                MatroidDescriptionContent::Partition(v) => {
+                    let matroid = PartitionMatroid::new(v.clone());
+                    let data = data.as_array();
+                    let ancillary = ancillary
+                        .as_ref()
+                        .map(|anc| anc.extract::<Vec<usize>>().unwrap())
+                        .unwrap();
+                    let ancillary = ancillary.as_slice();
+                    let diversity = DiversityMaximization::new(self_.k, self_.kind)
+                        .with_epsilon(self_.epsilon)
+                        .with_threads(self_.threads)
+                        .with_matroid(matroid);
+                    let diversity = if let Some(coreset_size) = self_.coreset_size {
+                        diversity.with_coreset(coreset_size)
+                    } else {
+                        diversity
+                    };
+                    diversity.solve(&data, Some(ancillary))
+                }
+                MatroidDescriptionContent::Transversal(topics) => {
+                    let matroid = TransversalMatroid::new(*topics);
+                    let data = data.as_array();
+                    let ancillary = ancillary
+                        .as_ref()
+                        .map(|anc| anc.extract::<Vec<Vec<usize>>>().unwrap())
+                        .unwrap();
+                    let ancillary = ancillary.as_slice();
+                    let diversity = DiversityMaximization::new(self_.k, self_.kind)
+                        .with_epsilon(self_.epsilon)
+                        .with_threads(self_.threads)
+                        .with_matroid(matroid);
+                    let diversity = if let Some(coreset_size) = self_.coreset_size {
+                        diversity.with_coreset(coreset_size)
+                    } else {
+                        diversity
+                    };
+                    diversity.solve(&data, Some(ancillary))
+                }
+            }
+        } else {
+            let data = data.as_array();
+            let diversity =
+                DiversityMaximization::new(self_.k, self_.kind).with_threads(self_.threads);
+            let diversity = if let Some(coreset_size) = self_.coreset_size {
+                diversity.with_coreset(coreset_size)
+            } else {
+                diversity
+            };
+            diversity.solve(&data, None)
+        };
+        sol.to_pyarray_bound(self_.py())
+    }
+}
 
 #[pymodule]
 #[pyo3(name = "libcoral")]
 fn py_libcoral(m: &Bound<'_, PyModule>) -> PyResult<()> {
     pyo3_log::init();
     m.add_class::<PyCoreset>()?;
-    // m.add_class::<PyDiversityMaximization>()?;
+    m.add_class::<PyDiversityMaximization>()?;
+    m.add_class::<MatroidDescription>()?;
     Ok(())
 }

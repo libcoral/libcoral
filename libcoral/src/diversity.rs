@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, marker::PhantomData};
+use std::collections::BTreeSet;
 
 use crate::{
     coreset::{CoresetBuilder, ExtractCoresetPoints},
@@ -143,12 +143,16 @@ impl DiversityMaximization<()> {
     }
 }
 
-impl<M: Matroid + SelectDelegates<M::Item> + Sync> DiversityMaximization<M>
+impl<M: Matroid + Sync> DiversityMaximization<M>
 where
     M::Item: Send + Sync + Clone,
 {
     pub fn with_threads(self, threads: usize) -> Self {
         Self { threads, ..self }
+    }
+
+    pub fn with_epsilon(self, epsilon: f32) -> Self {
+        Self { epsilon, ..self }
     }
 
     pub fn with_matroid<M2: Matroid>(self, matroid: M2) -> DiversityMaximization<M2> {
@@ -168,7 +172,12 @@ where
             ..self
         }
     }
+}
 
+impl<M: Matroid + SelectDelegates<M::Item> + Sync> DiversityMaximization<M>
+where
+    M::Item: Send + Sync + Clone,
+{
     /// Solves the diversity maximization problem on the given data. Ancillary data is required if
     /// the problem is constrained by a matroid.
     ///
@@ -261,6 +270,17 @@ where
 /// matroid in some corner cases (see section 3.1.2 of the paper).
 pub trait SelectDelegates<A> {
     fn select_delegates(&self, k: usize, ground_set: &[A], assigned: &[usize]) -> Array1<usize>;
+}
+
+impl SelectDelegates<()> for () {
+    fn select_delegates(
+        &self,
+        _k: usize,
+        _ground_set: &[()],
+        _assigned: &[usize],
+    ) -> Array1<usize> {
+        unreachable!()
+    }
 }
 
 impl SelectDelegates<usize> for PartitionMatroid {

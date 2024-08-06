@@ -91,6 +91,9 @@ impl Matroid for TransversalMatroid {
 }
 
 impl TransversalMatroid {
+    pub fn new(topics: usize) -> Self {
+        Self { topics }
+    }
     pub(crate) fn num_topics(&self) -> usize {
         self.topics + 1
     }
