@@ -104,7 +104,7 @@ pub fn assign_closest<S: Data<Elem = f32>>(
             let idx = centers[c];
             let d = eucl(&data.row(idx), &data.row(i), sq_norms[idx], sq_norms[i]);
             if d < distances[i] {
-                assignment[i] = idx;
+                assignment[i] = c;
                 distances[i] = d;
             }
         }
