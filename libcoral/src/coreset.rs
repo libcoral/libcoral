@@ -129,6 +129,10 @@ impl<A: Clone> FittedCoreset<A> {
         self.weights.view()
     }
 
+    pub fn assignment(&self) -> ArrayView1<usize> {
+        self.assignment.view()
+    }
+
     /// Maps the given indices into the coreset to indices in the original dataset
     pub fn invert_index<S: Data<Elem = usize>>(
         &self,

@@ -1,6 +1,80 @@
-use libcoral::diversity::{DiversityKind, DiversityMaximization};
+use libcoral::coreset::{CoresetBuilder, FittedCoreset};
 use numpy::*;
-use pyo3::{exceptions::PyValueError, prelude::*};
+use pyo3::prelude::*;
+
+#[pyclass]
+#[pyo3(name = "Coreset")]
+/// Build a coreset out of the given data points. Loosely follows
+/// the scikit-learn interface.
+///
+/// ## References
+///
+/// - Matteo Ceccarello, Andrea Pietracaprina, Geppino Pucci:
+///   Solving k-center Clustering (with Outliers) in MapReduce and Streaming, almost as Accurately as Sequentially.
+///   Proc. VLDB Endow. 12(7): 766-778 (2019)
+pub struct PyCoreset {
+    builder: CoresetBuilder<(), ()>,
+    fitted: Option<FittedCoreset<()>>,
+}
+
+#[pymethods]
+impl PyCoreset {
+    #[new]
+    #[pyo3(signature = (size, num_threads=1))]
+    /// Set up the coreset. If `num_threads > 1`, the coreset will be built
+    /// in parallel using multiple threads.
+    fn new(size: usize, num_threads: usize) -> Self {
+        let builder = CoresetBuilder::with_tau(size).with_threads(num_threads);
+        Self {
+            builder,
+            fitted: None,
+        }
+    }
+
+    /// Fit the coreset to the given data, i.e. selects the coreset points,
+    /// and their respective radii and weights, out of the data.
+    fn fit(&mut self, data: PyReadonlyArray2<f32>) {
+        let data = data.as_array();
+        self.fitted.replace(self.builder.fit(&data, None));
+    }
+
+    /// Fit the coreset to the given data, i.e. selects the coreset points,
+    /// and their respective radii and weights, out of the data.
+    /// Furthermore, return a vector with the assignment of data points
+    /// to coreset points.
+    fn fit_transform<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        data: PyReadonlyArray2<'py, f32>,
+    ) -> Bound<'py, PyArray1<usize>> {
+        slf.fit(data);
+        let assignment = slf.fitted.as_ref().unwrap().assignment();
+        assignment.to_pyarray_bound(slf.py())
+    }
+
+    #[getter]
+    /// On a fitted coreset, return the actual coreset points
+    fn points_(slf: PyRef<Self>) -> Option<Bound<PyArray2<f32>>> {
+        slf.fitted
+            .as_ref()
+            .map(|coreset| coreset.points().to_pyarray_bound(slf.py()))
+    }
+
+    #[getter]
+    /// On a fitted coreset, return the radius of each fitted point
+    fn radii_(slf: PyRef<Self>) -> Option<Bound<PyArray1<f32>>> {
+        slf.fitted
+            .as_ref()
+            .map(|coreset| coreset.radii().to_pyarray_bound(slf.py()))
+    }
+
+    #[getter]
+    /// On a fitted coreset, return the weight of each fitted point
+    fn weights_(slf: PyRef<Self>) -> Option<Bound<PyArrayDyn<usize>>> {
+        slf.fitted
+            .as_ref()
+            .map(|coreset| coreset.weights().to_pyarray_bound(slf.py()))
+    }
+}
 
 // #[pyclass]
 // #[pyo3(name = "DiversityMaximization")]
@@ -50,6 +124,7 @@ use pyo3::{exceptions::PyValueError, prelude::*};
 #[pyo3(name = "libcoral")]
 fn py_libcoral(m: &Bound<'_, PyModule>) -> PyResult<()> {
     pyo3_log::init();
+    m.add_class::<PyCoreset>()?;
     // m.add_class::<PyDiversityMaximization>()?;
     Ok(())
 }
