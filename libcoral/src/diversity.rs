@@ -431,13 +431,14 @@ where
 
     while found_improving_swap {
         found_improving_swap = false;
-        let threshold = (1.0 + epsilon / k as f32) * diversity.cost_subset(data, &iset);
+        let cost = diversity.cost_subset(data, &iset);
+        let threshold = (1.0 + epsilon / k as f32) * cost;
         for i in 0..data.nrows() {
             if found_improving_swap {
                 break;
             }
             if iset.contains(&i) {
-                for j in 0..i {
+                for j in 0..data.nrows() {
                     if !iset.contains(&j) {
                         iset.remove(&i);
                         iset.insert(j);
