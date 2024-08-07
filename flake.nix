@@ -53,6 +53,8 @@
             icecream
             scipy
             scikit-learn
+            umap-learn
+            matplotlib
           ]);
         };
       });

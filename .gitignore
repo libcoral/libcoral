@@ -3,3 +3,6 @@
 .venv
 py-libcoral/train-images-idx3-ubyte.gz
 py-libcoral/train-labels-idx1-ubyte.gz
+py-libcoral/fashion-mnist-umap.npy
+py-libcoral/remote-clique.png
+py-libcoral/remote-edge.png

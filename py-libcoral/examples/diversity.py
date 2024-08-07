@@ -1,37 +1,44 @@
 import libcoral # import the libcoral library
 import time
 import numpy as np
-import logging
-logging.basicConfig(level=logging.DEBUG)
+import matplotlib.pyplot as plt
 
 
 def main():
-    data, labels = get_fashion_mnist()
+    data, labels, embedding = get_fashion_mnist()
 
     # Remote-edge diversity: maximize the minimum distance between
     # any two points in the solution
     start = time.time()
-    diversity = libcoral.DiversityMaximization(10, "remote-edge", coreset_size=1000)
+    diversity = libcoral.DiversityMaximization(10, "remote-edge", coreset_size=100)
     solution = diversity.solve(data)
     end = time.time()
     print("found remote-edge solution with cost", diversity.cost(data[solution]), "in time", end - start)
+
+    plt.scatter(embedding[:,0], embedding[:,1])
+    plt.scatter(embedding[solution,0], embedding[solution,1], color="red")
+    plt.savefig("remote-edge.png")
     
     # Remote-clique diversity: maximize the sum of distances of
     # all points in the solution
     start = time.time()
-    diversity = libcoral.DiversityMaximization(10, "remote-clique", coreset_size=1000)
+    diversity = libcoral.DiversityMaximization(10, "remote-clique", coreset_size=100)
     solution = diversity.solve(data)
     end = time.time()
     print("found remote-clique solution with cost", diversity.cost(data[solution]), "in time", end - start)
 
-    # Remote-clique with partition matroid constraints
-    matroid = libcoral.MatroidDescription([2, 2, 2, 2, 2, 2, 2, 2, 2, 2])
-    start = time.time()
-    diversity = libcoral.DiversityMaximization(10, "remote-clique", coreset_size=1000, matroid=matroid)
-    solution = diversity.solve(data, labels)
-    end = time.time()
-    print("found remote-clique (with matroid constraints) solution with cost", diversity.cost(data[solution]), "in time", end - start)
+    plt.scatter(embedding[:,0], embedding[:,1])
+    plt.scatter(embedding[solution,0], embedding[solution,1], color="red")
+    plt.savefig("remote-clique.png")
 
+    #
+    # # Remote-clique with partition matroid constraints
+    # matroid = libcoral.MatroidDescription([2, 2, 2, 2, 2, 2, 2, 2, 2, 2])
+    # start = time.time()
+    # diversity = libcoral.DiversityMaximization(10, "remote-clique", coreset_size=200, matroid=matroid)
+    # solution = diversity.solve(data, labels)
+    # end = time.time()
+    # print("found remote-clique (with matroid constraints) solution with cost", diversity.cost(data[solution]), "in time", end - start)
 
 
 def get_fashion_mnist():
@@ -41,6 +48,8 @@ def get_fashion_mnist():
     import urllib.request
     import os
     import gzip
+    import umap
+
     fashion_local = "train-images-idx3-ubyte.gz"
     fashion_url = "https://raw.githubusercontent.com/zalandoresearch/fashion-mnist/master/data/fashion/train-images-idx3-ubyte.gz"
     fashion_labels_local = "train-labels-idx1-ubyte.gz"
@@ -57,7 +66,17 @@ def get_fashion_mnist():
     with gzip.open(fashion_labels_local, 'rb') as lbpath:
         labels = np.frombuffer(lbpath.read(), dtype=np.uint8,
                                offset=8)
-    return images.astype(np.float32), labels.astype(np.uint32)
+
+    data = images.astype(np.float32)
+
+    umap_file = "fashion-mnist-umap.npy"
+    if not os.path.isfile(umap_file):
+        embed = umap.UMAP()
+        embedding = embed.fit_transform(data)
+        np.save(umap_file, embedding)
+    embedding = np.load(umap_file)
+
+    return data, labels.astype(np.uint32), embedding
 
 
 main()
