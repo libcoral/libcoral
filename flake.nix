@@ -27,6 +27,13 @@
                 extensions = [ "rust-src" "rustfmt" ];
               };
         })
+
+        # quarto overlay
+        (final: prev: {
+          quarto = prev.quarto.override {
+            python3 = null;
+          };
+        })
       ];
       supportedSystems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forEachSupportedSystem = f: nixpkgs.lib.genAttrs supportedSystems (system: f {
@@ -46,6 +53,8 @@
             cargo-watch
             rust-analyzer
             python311
+            jupyter
+            quarto
           ] ++ (with pkgs.python311Packages; [
             venvShellHook
             numpy
@@ -55,6 +64,7 @@
             scikit-learn
             umap-learn
             matplotlib
+            seaborn
           ]);
         };
       });

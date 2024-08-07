@@ -1,0 +1,17 @@
+---
+title: "libcoral"
+subtitle: "Dealing with large amounts of data, the coreset way."
+---
+
+This library collects several computational geometry algorithms based on the coreset technique.
+Currently the focus is on clustering and diversity maximization, under a variety of constraints.
+
+The problems this library deals with are NP-hard and often have rather
+expensive approximation algorithms. To speed up the computation, the library
+employs _coresets_. A coreset is a _concise summary_ of the data that retains
+information about the overall structure: approximation algorithms (even
+expensive ones!!) can be run on this small summary while still yielding
+solutions that are valid with respect to the full dataset.
+
+- [Diversity maximization](/diversity.html)
+

@@ -1,0 +1,254 @@
+---
+title: "Diversity Maximization"
+subtitle: "Finding subsets of _diverse_ elements, under various constraints"
+---
+
+## What is Diversity Maximization?
+
+## Diversity Maximization with cardinality constraints
+
+
+```{python}
+import libcoral
+
+diversity = libcoral.DiversityMaximization(
+  10,           # the number of points to select
+  "remote-edge" # the diversity type
+)
+```
+
+Let's build a dummy dataset to try out things:
+
+```{python}
+import numpy as np
+from sklearn.datasets import make_blobs
+from matplotlib import pyplot as plt
+
+data, labels = make_blobs(1000, random_state=123)
+data = data.astype(np.float32)
+plt.scatter(data[:,0], data[:,1], s=0.5)
+```
+
+```{python}
+#| layout-ncol: 2
+#| column: page
+diversity_edge = libcoral.DiversityMaximization(4, "remote-edge")
+selected_edge = diversity_edge.solve(data)
+cost = diversity_edge.cost(data[selected_edge])
+plt.figure()
+plt.suptitle("remote-edge diversity")
+plt.title(f"cost (minimum distance): {cost:.2f}")
+plt.scatter(data[:,0], data[:,1], s=0.5)
+# Plot the selection of points
+plt.scatter(data[selected_edge,0], data[selected_edge,1], s=20, color="red")
+
+diversity_clique = libcoral.DiversityMaximization(4, "remote-clique")
+selected_clique = diversity_clique.solve(data)
+cost = diversity_clique.cost(data[selected_clique])
+plt.figure()
+plt.suptitle("remote-clique diversity")
+plt.title(f"cost (sum of distances): {cost:.2f}")
+plt.scatter(data[:,0], data[:,1], s=0.5)
+# Plot the selection of points
+plt.scatter(data[selected_clique,0], data[selected_clique,1], s=20, color="red")
+```
+
+```{python}
+#| cache: true
+#| code-fold: true
+#| layout-ncol: 2
+#| column: page
+#| message: false
+
+import time
+
+def bench(coreset_size=None):
+    if coreset_size is None:
+        diversity = libcoral.DiversityMaximization(10, "remote-clique")
+    else:
+        diversity = libcoral.DiversityMaximization(10, "remote-clique", coreset_size=coreset_size)
+
+    sizes = list(range(1000, 2000, 100))
+    times = []
+    costs = []
+    for n in sizes:
+        data, labels = make_blobs(n, random_state=123)
+        data = data.astype(np.float32)
+        start = time.time()
+        selected = diversity.solve(data)
+        end = time.time()
+        times.append(end - start)
+        costs.append(diversity.cost(data[selected]))
+    return dict(sizes=sizes, times=times, costs=costs)
+
+results_baseline = bench(None)
+results_coreset = bench(500)
+
+plt.figure()
+plt.title("Running time")
+plt.plot(results_baseline["sizes"], results_baseline["times"], label="baseline")
+plt.plot(results_coreset["sizes"], results_coreset["times"], label="coreset")
+plt.legend()
+
+plt.figure()
+plt.title("Cost (sum of distances)")
+plt.scatter(results_baseline["sizes"], results_baseline["costs"], label="baseline")
+plt.scatter(results_coreset["sizes"], results_coreset["costs"], label="coreset")
+plt.legend()
+```
+
+## Diversity Maximization with Matroid Constraints
+
+For experimenting with matroid constraints we will use the `fashion-mnist` dataset, which comprises 60000
+28x28 images of apparel items out of 10 possible categories.
+
+![Image from the original source (Zalando's Github)](https://github.com/zalandoresearch/fashion-mnist/blob/master/doc/img/fashion-mnist-sprite.png?raw=true)
+
+```{python}
+#| code-fold: true
+def load_fashion_mnist():
+    """This function just downloads the 60k training images of fashion-mnist locally, if not already available,
+    and returns them as a float32 array.
+    """
+    import urllib.request
+    import os
+    import gzip
+    import umap
+
+    fashion_local = "train-images-idx3-ubyte.gz"
+    fashion_url = "https://raw.githubusercontent.com/zalandoresearch/fashion-mnist/master/data/fashion/train-images-idx3-ubyte.gz"
+    fashion_labels_local = "train-labels-idx1-ubyte.gz"
+    fashion_labels_url = "https://github.com/zalandoresearch/fashion-mnist/raw/master/data/fashion/train-labels-idx1-ubyte.gz"
+    if not os.path.isfile(fashion_local):
+        print("downloading fashion-mnist file")
+        urllib.request.urlretrieve(fashion_url, fashion_local)
+    if not os.path.isfile(fashion_labels_local):
+        print("downloading fashion-mnist file")
+        urllib.request.urlretrieve(fashion_labels_url, fashion_labels_local)
+    with gzip.open(fashion_local, 'rb') as imgpath:
+        images = np.frombuffer(imgpath.read(), dtype=np.uint8,
+                               offset=16).reshape(60000, 784)
+    with gzip.open(fashion_labels_local, 'rb') as lbpath:
+        labels = np.frombuffer(lbpath.read(), dtype=np.uint8,
+                               offset=8)
+
+    data = images.astype(np.float32)
+
+    umap_file = "fashion-mnist-umap.npy"
+    if not os.path.isfile(umap_file):
+        embed = umap.UMAP()
+        embedding = embed.fit_transform(data)
+        np.save(umap_file, embedding)
+    embedding = np.load(umap_file)
+
+    return data, labels.astype(np.uint32), embedding
+```
+
+We define a _partition matroid_ on the categories, requiring that at most one item is picked from each category:
+
+```{python}
+partition_matroid = libcoral.MatroidDescription([1] * 10)
+```
+
+Then we instantiate the algorithm so to find a solution that respects the matroid constraint.
+Note that we use a matroid constraint: in this case it is absolutely required, as the approximation algorithm for
+Diversity Maximization under matroid constraints is a very expensive local search.
+
+```{python}
+diversity = libcoral.DiversityMaximization(
+    10, # how many points we want
+    "remote-clique", # the type of diversity
+    coreset_size=500, # the size of the coreset
+    matroid=partition_matroid # the matroid constraint
+)
+```
+
+To actually solve the problem we now need information about labels along with the data.
+We also get a 2-dimensional embedding for visualization purposes.
+
+```{python}
+data, categories, embedding = load_fashion_mnist()
+print(data.shape, categories.shape)
+```
+
+```{python}
+plt.figure(figsize=(10,10))
+plt.scatter(
+    embedding[:,0],
+    embedding[:,1],
+    c=categories,
+    cmap="tab10",
+    s=0.01
+)
+```
+
+We will now select 10 points without matroid constraints.
+
+```{python}
+diversity = libcoral.DiversityMaximization(
+    10,
+    "remote-clique",
+    coreset_size=500
+)
+selected = diversity.solve(embedding)
+cost = diversity.cost(embedding[selected])
+```
+
+```{python}
+palette = np.array(plt.get_cmap('tab10').colors)
+colors = palette[categories]
+
+plt.figure(figsize=(10,10))
+plt.scatter(
+    embedding[:,0],
+    embedding[:,1],
+    c=colors,
+    cmap="tab10",
+    s=0.01
+)
+plt.scatter(
+    embedding[selected,0],
+    embedding[selected,1],
+    c=colors[selected,:],
+    edgecolors="black",
+    cmap="tab10",
+    s=100
+)
+```
+
+And now with Matroid Constraints.
+
+```{python}
+diversity = libcoral.DiversityMaximization(
+    10,
+    "remote-clique",
+    coreset_size=2000,
+    matroid=partition_matroid,
+    epsilon=0.001
+)
+selected = diversity.solve(embedding, categories)
+cost = diversity.cost(embedding[selected])
+print(categories[selected])
+```
+
+```{python}
+plt.figure(figsize=(10,10))
+plt.scatter(
+    embedding[:,0],
+    embedding[:,1],
+    c=colors,
+    cmap="tab10",
+    s=0.01
+)
+plt.scatter(
+    embedding[selected,0],
+    embedding[selected,1],
+    c=colors[selected,:],
+    edgecolors="black",
+    cmap="tab10",
+    s=100
+)
+```
+
+
+
