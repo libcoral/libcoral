@@ -188,7 +188,7 @@ We will now select 10 points without matroid constraints.
 diversity = libcoral.DiversityMaximization(
     10,
     "remote-clique",
-    coreset_size=500
+    coreset_size=1000
 )
 selected = diversity.solve(embedding)
 cost = diversity.cost(embedding[selected])
@@ -223,8 +223,7 @@ diversity = libcoral.DiversityMaximization(
     10,
     "remote-clique",
     coreset_size=2000,
-    matroid=partition_matroid,
-    epsilon=0.001
+    matroid=partition_matroid
 )
 selected = diversity.solve(embedding, categories)
 cost = diversity.cost(embedding[selected])
