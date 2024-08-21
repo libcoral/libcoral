@@ -11,7 +11,12 @@ pub fn eucl<S: Data<Elem = f32>>(
     sq_norm_a: f32,
     sq_norm_b: f32,
 ) -> f32 {
-    (sq_norm_a + sq_norm_b - 2.0 * a.dot(b)).sqrt()
+    let sq_eucl = sq_norm_a + sq_norm_b - 2.0 * a.dot(b);
+    if sq_eucl < 0.0 {
+        0.0
+    } else {
+        sq_eucl.sqrt()
+    }
 }
 
 fn argmax<S: Data<Elem = f32>>(v: &ArrayBase<S, Ix1>) -> usize {
