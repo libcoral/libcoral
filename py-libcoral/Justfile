@@ -1,0 +1,5 @@
+example-diversity: build
+  cd examples && python diversity.py
+
+build:
+  maturin develop --release

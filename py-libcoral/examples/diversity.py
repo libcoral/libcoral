@@ -5,43 +5,34 @@ import matplotlib.pyplot as plt
 
 
 def main():
-    data, labels, embedding = get_fashion_mnist()
+    data, labels, embedding = load_fashion_mnist()
 
-    # Remote-edge diversity: maximize the minimum distance between
-    # any two points in the solution
-    start = time.time()
-    diversity = libcoral.DiversityMaximization(10, "remote-edge", coreset_size=100)
-    solution = diversity.solve(data)
-    end = time.time()
-    print("found remote-edge solution with cost", diversity.cost(data[solution]), "in time", end - start)
-
-    plt.scatter(embedding[:,0], embedding[:,1])
-    plt.scatter(embedding[solution,0], embedding[solution,1], color="red")
-    plt.savefig("remote-edge.png")
+    # # Remote-edge diversity: maximize the minimum distance between
+    # # any two points in the solution
+    # start = time.time()
+    # diversity = libcoral.DiversityMaximization(10, "remote-edge", coreset_size=100)
+    # solution = diversity.solve(data)
+    # end = time.time()
+    # print("found remote-edge solution with cost", diversity.cost(data[solution]), "in time", end - start)
+    #
+    # plt.scatter(embedding[:,0], embedding[:,1])
+    # plt.scatter(embedding[solution,0], embedding[solution,1], color="red")
+    # plt.savefig("remote-edge.png")
     
     # Remote-clique diversity: maximize the sum of distances of
     # all points in the solution
     start = time.time()
-    diversity = libcoral.DiversityMaximization(10, "remote-clique", coreset_size=100)
-    solution = diversity.solve(data)
+    diversity = libcoral.DiversityMaximization(10, "remote-clique", coreset_size=1000)
+    solution = diversity.solve(embedding)
     end = time.time()
-    print("found remote-clique solution with cost", diversity.cost(data[solution]), "in time", end - start)
+    print("found remote-clique solution with cost", diversity.cost(embedding[solution]), "in time", end - start)
 
     plt.scatter(embedding[:,0], embedding[:,1])
     plt.scatter(embedding[solution,0], embedding[solution,1], color="red")
     plt.savefig("remote-clique.png")
 
-    #
-    # # Remote-clique with partition matroid constraints
-    # matroid = libcoral.MatroidDescription([2, 2, 2, 2, 2, 2, 2, 2, 2, 2])
-    # start = time.time()
-    # diversity = libcoral.DiversityMaximization(10, "remote-clique", coreset_size=200, matroid=matroid)
-    # solution = diversity.solve(data, labels)
-    # end = time.time()
-    # print("found remote-clique (with matroid constraints) solution with cost", diversity.cost(data[solution]), "in time", end - start)
 
-
-def get_fashion_mnist():
+def load_fashion_mnist():
     """This function just downloads the 60k training images of fashion-mnist locally, if not already available,
     and returns them as a float32 array.
     """
@@ -77,6 +68,7 @@ def get_fashion_mnist():
     embedding = np.load(umap_file)
 
     return data, labels.astype(np.uint32), embedding
+
 
 
 main()
