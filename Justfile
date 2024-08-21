@@ -1,3 +1,4 @@
+# Deploy the documentation on Github pages
 docs:
   #!/usr/bin/env bash
   pip uninstall --yes libcoral
@@ -5,4 +6,4 @@ docs:
   maturin develop --release
   popd
   pushd docs-src
-  quarto render
+  quarto publish gh-pages --no-prompt
