@@ -40,6 +40,7 @@
     devShells = forEachSupportedSystem ({pkgs}: let
       my-quarto = pkgs.quarto.override {
         python3 = null;
+        rWrapper = null;
       };
     in {
       default = pkgs.mkShell {
@@ -55,6 +56,7 @@
             rust-analyzer
             python311
             my-quarto
+            R
           ]
           ++ (with pkgs.python311Packages; [
             venvShellHook
@@ -67,6 +69,11 @@
             matplotlib
             seaborn
             jupyter
+          ])
+          ++ (with pkgs.rPackages; [
+            reticulate
+            ggplot2
+            rmarkdown
           ]);
       };
     });

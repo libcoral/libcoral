@@ -13,5 +13,10 @@ information about the overall structure: approximation algorithms (even
 expensive ones!!) can be run on this small summary while still yielding
 solutions that are valid with respect to the full dataset.
 
+The package currently supports the following algorithms:
+
 - [Diversity maximization](/diversity.html)
+
+The software is implemented in Rust with a Python interface.
+It can be [ used from R ](/using-with-r.html) as well.
 

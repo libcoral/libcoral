@@ -1,20 +1,57 @@
 ---
 title: "Diversity Maximization"
 subtitle: "Finding subsets of _diverse_ elements, under various constraints"
+bibliography: references.bib
 ---
 
 ## What is Diversity Maximization?
 
+Intuitively, the _diversity maximization_ requires to find a set of _diverse_
+elements out of a set of points. The dissimilarity between points is measured
+by some distance function, for instance the Euclidean distance function.
+
+More formally, given a dataset of points in a metric space and an integer $k$, a
+diversity maximization problem requires determining a subset of $k$ points
+maximizing some diversity objective measure.
+
+There are several possible objective measures, whose names derive from the
+distances considered in the points of the solution.
+
+<center>
+  ![](imgs/diversity-measures.png){width="70%"}
+</center>
+
+All these problems are NP-hard, and thus `libcoral` implements several
+approximation algorithms.
+
+`libcoral` currently supports the `remote-edge` and the `remote-clique`
+diversity notions, which require to maximize, respectively, the minimum
+distance between any two points of the solution and the sum of pairwise
+distances of the points of the solution.
+
 ## Diversity Maximization with cardinality constraints
+
+The most straightforward formulation of the diversity maximization problem
+requires to find a subset of $k$ points of the input.
+
+In `libcoral`, this is achieved by instantiating a `DiversityMaximization`
+object, which takes a variety of parameters. In its simplest form, the
+invocation is the following:
 
 ```{python}
 import libcoral
 
 diversity = libcoral.DiversityMaximization(
   10,           # the number of points to select
-  "remote-edge" # the diversity type
+  "remote-edge" # the diversity type, can also be "remote-clique"
 )
 ```
+
+The `diversity` object then has a `solve` method that accepts a `numpy`
+2-dimensional array of `float32` data, where each row is a data point of the
+set. The `solve` method returns an array of integers, which are the integers of
+the rows of the input corresponding to the solution. There is a `cost` method
+as well, that returns the cost of any set of points.
 
 Let's build a dummy dataset to try out things:
 
@@ -29,12 +66,17 @@ data = data.astype(np.float32)
 plt.scatter(data[:,0], data[:,1], s=0.5)
 ```
 
+The following code snippet sets up and solve both remote-edge and remote-clique
+on the set of points created above.
+
 ```{python}
 #| layout-ncol: 2
 #| column: page
+# set up and solve the remote-edge problem
 diversity_edge = libcoral.DiversityMaximization(4, "remote-edge")
 selected_edge = diversity_edge.solve(data)
 cost = diversity_edge.cost(data[selected_edge])
+
 plt.figure()
 plt.suptitle("remote-edge diversity")
 plt.title(f"cost (minimum distance): {cost:.2f}")
@@ -42,9 +84,11 @@ plt.scatter(data[:,0], data[:,1], s=0.5)
 # Plot the selection of points
 plt.scatter(data[selected_edge,0], data[selected_edge,1], s=20, color="red")
 
+# set up and solve the remote-clique problem
 diversity_clique = libcoral.DiversityMaximization(4, "remote-clique")
 selected_clique = diversity_clique.solve(data)
 cost = diversity_clique.cost(data[selected_clique])
+
 plt.figure()
 plt.suptitle("remote-clique diversity")
 plt.title(f"cost (sum of distances): {cost:.2f}")
@@ -52,6 +96,33 @@ plt.scatter(data[:,0], data[:,1], s=0.5)
 # Plot the selection of points
 plt.scatter(data[selected_clique,0], data[selected_clique,1], s=20, color="red")
 ```
+
+As you can see, the two solutions look quite different in terms of position of
+the points. Oftentimes, the remote-clique solution has points which are grouped
+in two clusters. This is an effect of the 2-approximation algorithm used to
+solve it, which is based on finding a maximum-weight matching.
+
+The code above, especially for the remote-clique problem, has one problem: for
+large datasets it tends to be quite slow. This is because the approximation algorithm
+has a high computational complexity.
+
+To address this problem, `libcoral` implements the coreset-based approach
+described in [@DBLP:journals/pvldb/CeccarelloPPU17].
+In order to use the coreset-based approach,
+the instantiation of the `DiversityMaximization` object requires the additional parameter `coreset size`:
+
+```{python}
+diversity = libcoral.DiversityMaximization(
+    10,
+    "remote-clique",
+    coreset_size=1000
+)
+```
+
+Higher values of `coreset_size` yield more accurate solutions at the expense of
+the running time. The plots below report the running time (left) and the cost
+of the solutions (right), comparing the baseline algorithm without coresets (in
+blue) with the coreset-based algorithm (in orange) using a coreset of size 500.
 
 ```{python}
 #| cache: true
@@ -86,23 +157,45 @@ results_coreset = bench(500)
 
 plt.figure()
 plt.title("Running time")
+plt.xlabel("Dataset size")
+plt.ylabel("Running time")
 plt.plot(results_baseline["sizes"], results_baseline["times"], label="baseline")
 plt.plot(results_coreset["sizes"], results_coreset["times"], label="coreset")
 plt.legend()
 
 plt.figure()
 plt.title("Cost (sum of distances)")
+plt.xlabel("Dataset size")
+plt.ylabel("remote-clique cost")
 plt.scatter(results_baseline["sizes"], results_baseline["costs"], label="baseline")
 plt.scatter(results_coreset["sizes"], results_coreset["costs"], label="coreset")
 plt.legend()
 ```
 
+Clearly, the running time using coresets is a fraction of the baseline. As for
+the cost, recall that for diversity maximization higher is better: we observe
+that on larger datasets the coreset introduces a moderate loss of quality.
+
 ## Diversity Maximization with Matroid Constraints
 
-For experimenting with matroid constraints we will use the `fashion-mnist` dataset, which comprises 60000
-28x28 images of apparel items out of 10 possible categories.
+An important variant of the diversity maximization primitive prescribes that
+the solution satisfies an additional orthogonal requirement, which can be
+specified as a [matroid constraint](https://en.wikipedia.org/wiki/Matroid)
+(i.e., a feasible solution must be an independent set of size $k$).
+
+For instance, if we have a labelled dataset and we want the solution to contain
+at most $k_\ell$ points with label $\ell$, we can set up a diversity
+maximization problem with a [partition
+matroid](https://en.wikipedia.org/wiki/Partition_matroid) constraint.
+
+For experimenting with matroid constraints we will use the `fashion-mnist`
+dataset, which comprises 60000 28x28 images of apparel items out of 10 possible
+categories. Each image then corresponds to a 784 dimensional vector. 
 
 ![Image from the original source (Zalando's Github)](https://github.com/zalandoresearch/fashion-mnist/blob/master/doc/img/fashion-mnist-sprite.png?raw=true)
+
+For the sake of example, we embed the dataset in two dimensions using
+[UMAP](https://umap-learn.readthedocs.io/en/latest/).
 
 ```{python}
 #| code-fold: true
@@ -165,9 +258,12 @@ We define a _partition matroid_ on the categories, requiring that at most one it
 partition_matroid = libcoral.MatroidDescription([1] * 10)
 ```
 
-Then we instantiate the algorithm so to find a solution that respects the matroid constraint.
-Note that we use a matroid constraint: in this case it is absolutely required, as the approximation algorithm for
-Diversity Maximization under matroid constraints is a very expensive local search.
+Then we instantiate the algorithm so to find a solution that respects the
+matroid constraint. Note that we provide the `coreset_size` parameter: this case it is
+absolutely required, as the approximation algorithm for Diversity Maximization
+under matroid constraints is a very expensive local search.
+The algorithms used in this case are described in [@DBLP:conf/wsdm/CeccarelloPP18]
+and [@DBLP:journals/tkdd/CeccarelloPP20].
 
 ```{python}
 diversity = libcoral.DiversityMaximization(
@@ -179,7 +275,6 @@ diversity = libcoral.DiversityMaximization(
 ```
 
 To actually solve the problem we now need information about labels along with the data.
-We also get a 2-dimensional embedding for visualization purposes.
 
 ```{python}
 data, categories, embedding = load_fashion_mnist(seed=1234)
@@ -223,13 +318,18 @@ selected = diversity.solve(embedding)
 cost = diversity.cost(embedding[selected])
 ```
 
+Notice that we have more than one point per category. Also note that some of
+the selected points appear to be outside of their color's cluster: this is due
+to the fact that some points are actually far away from other points from the
+same category.
+
 ```{python}
 #| code-fold: true
 plt.figure(figsize=(8,8))
 
 ax = plt.gca()
 cost = diversity.cost(embedding[selected])
-ax.set_title(f"remote-clique cost: {cost}")
+ax.set_title(f"remote-clique cost: {cost:.2f}")
 sns.scatterplot(
     x=embedding[:,0],
     y=embedding[:,1],
@@ -252,7 +352,8 @@ sns.scatterplot(
 )
 ```
 
-And now with Matroid Constraints.
+Solving the problem with matroid constraints returns a point from each
+category, as required by the partition matroid constraint.
 
 ```{python}
 diversity = libcoral.DiversityMaximization(
@@ -271,7 +372,7 @@ print(categories[selected])
 plt.figure(figsize=(8,8))
 ax = plt.gca()
 cost = diversity.cost(embedding[selected])
-ax.set_title(f"remote-clique cost: {cost}")
+ax.set_title(f"remote-clique cost: {cost:.2f}")
 sns.scatterplot(
     x=embedding[:,0],
     y=embedding[:,1],

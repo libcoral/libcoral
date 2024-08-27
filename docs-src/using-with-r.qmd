@@ -1,0 +1,44 @@
+---
+title: "Using with R"
+---
+
+`libcoral` is released as a Python library, but it is rather easy to use from `R` as well, thanks to
+the [`reticulate`](https://rstudio.github.io/reticulate/) package.
+
+Consider the following small example dataset, which comprises 100 2-dimensional points.
+
+```{r}
+set.seed(1234)
+dat <- matrix(rnorm(200), 100, 2)
+```
+
+The following snippet shows how to import the `libcoral` Python package using `reticulate`,
+how to instantiate a [Diversity Maximization](/diversity.html) solver and how to pass the
+dataset.
+
+```{r}
+library(reticulate)
+
+libcoral <- import("libcoral")
+
+diversity <- libcoral$DiversityMaximization(4L, "remote-edge")
+selector <- diversity$solve(
+  np_array(dat, "float32") # <1>
+)
+# we have to offset it by 1!
+selector <- selector + 1 # <2>
+```
+1. Note that we have to use the `reticulate::np_array` function to convert from a R matrix to a `numpy` 2-dimensional array. It is especially important that the data type is `float32`, as that is the only float representation currently supported by `libcoral`.
+2. Python and R have different indexing conventions. Hence the indices returned by `diversity$solve` are 0-based, whereas R expects 1-based indices.
+
+The result of the diversity maximization problem can then be plotted as follows.
+
+```{r}
+library(ggplot2)
+df <- as.data.frame(dat)
+solution <- as.data.frame(dat[selector,])
+ggplot(df, aes(V1, V2)) +
+  geom_point() +
+  geom_point(data=solution, color="#CB4154", size=5)
+```
+

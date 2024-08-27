@@ -8,11 +8,13 @@ website:
   #   left:
   #     - href: index.qmd
   sidebar:
-    #style: "docked"
+    style: "floating"
     search: true
     contents:
       - section: "Introduction"
         href: index.qmd
+      - section: "Using with R"
+        href: using-with-r.qmd
       - section: "Algorithms"
         href: diversity.qmd
         contents:
