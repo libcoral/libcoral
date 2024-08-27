@@ -7,7 +7,6 @@ subtitle: "Finding subsets of _diverse_ elements, under various constraints"
 
 ## Diversity Maximization with cardinality constraints
 
-
 ```{python}
 import libcoral
 
@@ -23,6 +22,7 @@ Let's build a dummy dataset to try out things:
 import numpy as np
 from sklearn.datasets import make_blobs
 from matplotlib import pyplot as plt
+import seaborn as sns
 
 data, labels = make_blobs(1000, random_state=123)
 data = data.astype(np.float32)
@@ -106,7 +106,7 @@ For experimenting with matroid constraints we will use the `fashion-mnist` datas
 
 ```{python}
 #| code-fold: true
-def load_fashion_mnist():
+def load_fashion_mnist(seed=None, sample_size=None):
     """This function just downloads the 60k training images of fashion-mnist locally, if not already available,
     and returns them as a float32 array.
     """
@@ -114,6 +114,7 @@ def load_fashion_mnist():
     import os
     import gzip
     import umap
+    import numpy as np
 
     fashion_local = "train-images-idx3-ubyte.gz"
     fashion_url = "https://raw.githubusercontent.com/zalandoresearch/fashion-mnist/master/data/fashion/train-images-idx3-ubyte.gz"
@@ -141,6 +142,20 @@ def load_fashion_mnist():
         np.save(umap_file, embedding)
     embedding = np.load(umap_file)
 
+    if sample_size is not None:
+        print("returning sampled")
+        seed = seed if seed is not None else 1234
+        gen = np.random.default_rng()
+        idxs = np.arange(data.shape[0])
+        gen.shuffle(idxs)
+        idxs = idxs[:sample_size]
+        return data[idxs], labels.astype(np.uint32)[idxs], embedding[idxs]
+    if seed is not None:
+        gen = np.random.default_rng()
+        idxs = np.arange(data.shape[0])
+        gen.shuffle(idxs)
+        return data[idxs], labels.astype(np.uint32)[idxs], embedding[idxs]
+        
     return data, labels.astype(np.uint32), embedding
 ```
 
@@ -158,7 +173,7 @@ Diversity Maximization under matroid constraints is a very expensive local searc
 diversity = libcoral.DiversityMaximization(
     10, # how many points we want
     "remote-clique", # the type of diversity
-    coreset_size=500, # the size of the coreset
+    coreset_size=1000, # the size of the coreset
     matroid=partition_matroid # the matroid constraint
 )
 ```
@@ -167,18 +182,32 @@ To actually solve the problem we now need information about labels along with th
 We also get a 2-dimensional embedding for visualization purposes.
 
 ```{python}
-data, categories, embedding = load_fashion_mnist()
-print(data.shape, categories.shape)
+data, categories, embedding = load_fashion_mnist(seed=1234)
 ```
 
 ```{python}
-plt.figure(figsize=(10,10))
-plt.scatter(
-    embedding[:,0],
-    embedding[:,1],
-    c=categories,
-    cmap="tab10",
-    s=0.01
+#| code-fold: true
+palette = [
+  "#5778a4",
+  "#e49444",
+  "#d1615d",
+  "#85b6b2",
+  "#6a9f58",
+  "#e7ca60",
+  "#a87c9f",
+  "#f1a2a9",
+  "#967662",
+  "#b8b0ac",
+]
+plt.figure(figsize=(8,8))
+sns.scatterplot(
+    x=embedding[:,0],
+    y=embedding[:,1],
+    hue=categories,
+    palette=palette,
+    s=1,
+    edgecolors=None,
+    legend=False
 )
 ```
 
@@ -188,31 +217,38 @@ We will now select 10 points without matroid constraints.
 diversity = libcoral.DiversityMaximization(
     10,
     "remote-clique",
-    coreset_size=1000
+    coreset_size=5000
 )
 selected = diversity.solve(embedding)
 cost = diversity.cost(embedding[selected])
 ```
 
 ```{python}
-palette = np.array(plt.get_cmap('tab10').colors)
-colors = palette[categories]
+#| code-fold: true
+plt.figure(figsize=(8,8))
 
-plt.figure(figsize=(10,10))
-plt.scatter(
-    embedding[:,0],
-    embedding[:,1],
-    c=colors,
-    cmap="tab10",
-    s=0.01
+ax = plt.gca()
+cost = diversity.cost(embedding[selected])
+ax.set_title(f"remote-clique cost: {cost}")
+sns.scatterplot(
+    x=embedding[:,0],
+    y=embedding[:,1],
+    hue=categories,
+    palette=palette,
+    s=1,
+    edgecolors=None,
+    legend=False,
+    ax=ax
 )
-plt.scatter(
-    embedding[selected,0],
-    embedding[selected,1],
-    c=colors[selected,:],
+sns.scatterplot(
+    x=embedding[selected,0],
+    y=embedding[selected,1],
+    hue=categories[selected],
+    palette=palette,
+    s=100,
     edgecolors="black",
-    cmap="tab10",
-    s=100
+    legend=False,
+    ax=ax
 )
 ```
 
@@ -222,7 +258,7 @@ And now with Matroid Constraints.
 diversity = libcoral.DiversityMaximization(
     10,
     "remote-clique",
-    coreset_size=2000,
+    coreset_size=5000,
     matroid=partition_matroid
 )
 selected = diversity.solve(embedding, categories)
@@ -231,21 +267,30 @@ print(categories[selected])
 ```
 
 ```{python}
-plt.figure(figsize=(10,10))
-plt.scatter(
-    embedding[:,0],
-    embedding[:,1],
-    c=colors,
-    cmap="tab10",
-    s=0.01
+#| code-fold: true
+plt.figure(figsize=(8,8))
+ax = plt.gca()
+cost = diversity.cost(embedding[selected])
+ax.set_title(f"remote-clique cost: {cost}")
+sns.scatterplot(
+    x=embedding[:,0],
+    y=embedding[:,1],
+    hue=categories,
+    palette=palette,
+    s=1,
+    edgecolors=None,
+    legend=False,
+    ax=ax
 )
-plt.scatter(
-    embedding[selected,0],
-    embedding[selected,1],
-    c=colors[selected,:],
+sns.scatterplot(
+    x=embedding[selected,0],
+    y=embedding[selected,1],
+    hue=categories[selected],
+    palette=palette,
+    s=100,
     edgecolors="black",
-    cmap="tab10",
-    s=100
+    legend=False,
+    ax=ax
 )
 ```
 
