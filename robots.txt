@@ -1,1 +1,1 @@
-Sitemap: https://Cecca.github.io/libcoral/sitemap.xml
+Sitemap: https://libcoral.github.io/libcoral/sitemap.xml
