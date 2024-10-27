@@ -1,5 +1,7 @@
 use ndarray::{concatenate, prelude::*, Data};
 
+use crate::metricdata::{EuclideanData, MetricData};
+
 pub trait WeightCoresetPoints {
     fn weight_coreset_points<A>(
         &self,
@@ -42,18 +44,18 @@ impl WeightCoresetPoints for WeightByCount {
 pub trait ExtractCoresetPoints {
     type Ancillary: Clone + Send + Sync;
     /// Returns an array of indices into the data pointing to the extracted coreset points.
-    fn extract_coreset_points<S: Data<Elem = f32>>(
+    fn extract_coreset_points<D: MetricData>(
         &self,
-        data: &ArrayBase<S, Ix2>,
+        data: &D,
         ancillary: Option<&[Self::Ancillary]>,
         assigned: &[usize],
     ) -> Array1<usize>;
 }
 impl ExtractCoresetPoints for () {
     type Ancillary = ();
-    fn extract_coreset_points<S: Data<Elem = f32>>(
+    fn extract_coreset_points<D: MetricData>(
         &self,
-        _data: &ArrayBase<S, Ix2>,
+        _data: &D,
         _ancillary: Option<&[Self::Ancillary]>,
         _assigned: &[usize],
     ) -> Array1<usize> {
@@ -106,7 +108,7 @@ where
 {
     /// the indices _in the original dataset_
     coreset_indices: Array1<usize>,
-    coreset_points: Array2<f32>,
+    // coreset_points: D,
     ancillary: Option<Vec<A>>,
     radius: Array1<f32>,
     weights: ArrayD<usize>,
@@ -117,9 +119,13 @@ impl<A: Clone> FittedCoreset<A> {
     pub fn ancillary(&self) -> Option<&[A]> {
         self.ancillary.as_deref()
     }
-    pub fn points(&self) -> ArrayView2<f32> {
-        self.coreset_points.view()
+
+    pub fn indices(&self) -> ArrayView1<usize> {
+        self.coreset_indices.view()
     }
+    // pub fn points(&self) -> ArrayView2<f32> {
+    //     self.coreset_points.view()
+    // }
 
     pub fn radii(&self) -> ArrayView1<f32> {
         self.radius.view()
@@ -150,7 +156,7 @@ impl<A: Clone> Compose for FittedCoreset<A> {
             .map(|(a, b)| Compose::compose(a, b));
         Self {
             coreset_indices: Compose::compose(a.coreset_indices, b.coreset_indices),
-            coreset_points: Compose::compose(a.coreset_points, b.coreset_points),
+            // coreset_points: Compose::compose(a.coreset_points, b.coreset_points),
             ancillary,
             radius: Compose::compose(a.radius, b.radius),
             weights: Compose::compose(a.weights, b.weights),
@@ -201,9 +207,9 @@ impl<E: ExtractCoresetPoints + Sync, W: WeightCoresetPoints + Sync> CoresetBuild
         Self { threads, ..self }
     }
 
-    pub fn fit<S: Data<Elem = f32>>(
+    pub fn fit<'data, C: MetricData + Send, D: MetricData + NChunks<Output<'data> = C>>(
         &self,
-        data: &ArrayBase<S, Ix2>,
+        data: &'data D,
         ancillary: Option<&[E::Ancillary]>,
     ) -> FittedCoreset<E::Ancillary> {
         if self.threads == 1 {
@@ -213,17 +219,17 @@ impl<E: ExtractCoresetPoints + Sync, W: WeightCoresetPoints + Sync> CoresetBuild
         }
     }
 
-    fn fit_sequential<S: Data<Elem = f32>>(
+    fn fit_sequential<D: MetricData>(
         &self,
-        data: &ArrayBase<S, Ix2>,
+        data: &D,
         ancillary: Option<&[E::Ancillary]>,
     ) -> FittedCoreset<E::Ancillary> {
         self.fit_sequential_offset(data, ancillary, 0)
     }
 
-    fn fit_sequential_offset<S: Data<Elem = f32>>(
+    fn fit_sequential_offset<D: MetricData>(
         &self,
-        data: &ArrayBase<S, Ix2>,
+        data: &D,
         ancillary: Option<&[E::Ancillary]>,
         index_offset: usize,
     ) -> FittedCoreset<E::Ancillary> {
@@ -268,7 +274,7 @@ impl<E: ExtractCoresetPoints + Sync, W: WeightCoresetPoints + Sync> CoresetBuild
         });
 
         FittedCoreset {
-            coreset_points: data.select(Axis(0), coreset_indices.as_slice().unwrap()),
+            // coreset_points: data.subset(&coreset_indices),
             coreset_indices: coreset_indices + index_offset,
             ancillary: coreset_ancillary,
             radius,
@@ -277,9 +283,9 @@ impl<E: ExtractCoresetPoints + Sync, W: WeightCoresetPoints + Sync> CoresetBuild
         }
     }
 
-    fn fit_parallel<S: Data<Elem = f32>>(
+    fn fit_parallel<'data, D: MetricData + NChunks<Output<'data> = C>, C: MetricData + Send>(
         &self,
-        data: &ArrayBase<S, Ix2>,
+        data: &'data D,
         ancillary: Option<&[E::Ancillary]>,
     ) -> FittedCoreset<E::Ancillary> {
         let n_chunks = self.threads;
@@ -329,6 +335,19 @@ pub trait NChunks {
 
 impl NChunks for Array1<usize> {
     type Output<'slf> = ArrayView1<'slf, usize>;
+
+    fn nchunks(&self, num_chunks: usize) -> impl Iterator<Item = Self::Output<'_>> {
+        let size = self.nchunks_size(num_chunks);
+        self.axis_chunks_iter(Axis(0), size)
+    }
+
+    fn nchunks_size(&self, num_chunks: usize) -> usize {
+        (self.len() as f64 / num_chunks as f64).ceil() as usize
+    }
+}
+
+impl NChunks for Array1<f32> {
+    type Output<'slf> = ArrayView1<'slf, f32>;
 
     fn nchunks(&self, num_chunks: usize) -> impl Iterator<Item = Self::Output<'_>> {
         let size = self.nchunks_size(num_chunks);

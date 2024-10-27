@@ -1,9 +1,10 @@
-use std::collections::BTreeSet;
+use std::{array::IntoIter, collections::BTreeSet};
 
 use crate::{
-    coreset::{CoresetBuilder, ExtractCoresetPoints},
+    coreset::{CoresetBuilder, ExtractCoresetPoints, NChunks},
     gmm::{compute_sq_norms, eucl, greedy_minimum_maximum},
     matroid::{Matroid, PartitionMatroid, TransversalMatroid},
+    metricdata::{EuclideanData, MetricData, Subset},
 };
 use ndarray::{prelude::*, Data};
 
@@ -15,8 +16,8 @@ pub enum DiversityKind {
 }
 
 impl DiversityKind {
-    fn solve<S: Data<Elem = f32>>(&self, data: &ArrayBase<S, Ix2>, k: usize) -> Array1<usize> {
-        assert!(data.nrows() > k);
+    fn solve<D: MetricData>(&self, data: &D, k: usize) -> Array1<usize> {
+        assert!(data.num_points() > k);
         match self {
             Self::RemoteEdge => {
                 let (sol, _, _) = greedy_minimum_maximum(data, k);
@@ -28,8 +29,8 @@ impl DiversityKind {
                 // The gmm greedy algorithm might give a solution with a better cost than the
                 // matching algorithm, at times. We return the best of the two.
                 let (sol2, _, _) = greedy_minimum_maximum(data, k);
-                if self.cost(&data.select(Axis(0), sol.as_slice().unwrap()))
-                    > self.cost(&data.select(Axis(0), sol2.as_slice().unwrap()))
+                if self.cost_subset(data, sol.iter().copied())
+                    > self.cost_subset(data, sol2.iter().copied())
                 {
                     log::debug!("Returning the solution from the matching");
                     sol
@@ -41,15 +42,15 @@ impl DiversityKind {
         }
     }
 
-    fn solve_matroid<S: Data<Elem = f32>, A, M: Matroid<Item = A>>(
+    fn solve_matroid<D: MetricData, A, M: Matroid<Item = A>>(
         &self,
-        data: &ArrayBase<S, Ix2>,
+        data: &D,
         ancillary: &[A],
         k: usize,
         matroid: &M,
         epsilon: f32,
     ) -> Array1<usize> {
-        assert!(data.nrows() > k);
+        assert!(data.num_points() > k);
         match self {
             Self::RemoteEdge => {
                 unimplemented!("no known approximation algorithm exists, use explicit enumeration on a small enough coreset")
@@ -85,19 +86,20 @@ impl DiversityKind {
         }
     }
 
-    fn cost_subset<S: Data<Elem = f32>>(
-        &self,
-        data: &ArrayBase<S, Ix2>,
-        subset: &BTreeSet<usize>,
-    ) -> f32 {
+    fn cost_subset<D: MetricData, I: IntoIterator<Item = usize>>(&self, data: &D, subset: I) -> f32
+    where
+        I::IntoIter: Clone,
+    {
+        let it1 = subset.into_iter();
+        let it_factory = it1.clone();
         match self {
             Self::RemoteEdge => {
-                let sq_norms = compute_sq_norms(data);
                 let mut min = f32::INFINITY;
-                for &i in subset.iter() {
-                    for &j in subset.iter() {
+                for i in it1 {
+                    let it2 = it_factory.clone();
+                    for j in it2 {
                         if i < j {
-                            let d = eucl(&data.row(i), &data.row(j), sq_norms[i], sq_norms[j]);
+                            let d = data.distance(i, j);
                             min = min.min(d);
                         }
                     }
@@ -105,12 +107,12 @@ impl DiversityKind {
                 min
             }
             Self::RemoteClique => {
-                let sq_norms = compute_sq_norms(data);
                 let mut sum = 0.0;
-                for &i in subset.iter() {
-                    for &j in subset.iter() {
+                for i in it1 {
+                    let it2 = it_factory.clone();
+                    for j in it2 {
                         if i < j {
-                            let d = eucl(&data.row(i), &data.row(j), sq_norms[i], sq_norms[j]);
+                            let d = data.distance(i, j);
                             sum += d;
                         }
                     }
@@ -182,9 +184,13 @@ where
     /// the problem is constrained by a matroid.
     ///
     /// Returns an integer array of the indices of the points included in the solution.
-    pub fn solve<S: Data<Elem = f32>>(
+    pub fn solve<
+        'data,
+        D: MetricData + Subset + NChunks<Output<'data> = C>,
+        C: MetricData + Send,
+    >(
         &self,
-        data: &ArrayBase<S, Ix2>,
+        data: &'data D,
         ancillary: Option<&[M::Item]>,
     ) -> Array1<usize> {
         if let Some(coreset_size) = self.coreset_size {
@@ -194,7 +200,7 @@ where
                     .with_threads(self.threads)
                     .fit(data, ancillary);
                 let indices = self.kind.solve_matroid(
-                    &coreset.points(),
+                    &data.subset(coreset.indices().into_iter().copied()),
                     coreset
                         .ancillary()
                         .expect("ancillary data is required with a matroid"),
@@ -207,7 +213,9 @@ where
                 let coreset = CoresetBuilder::with_tau(coreset_size)
                     .with_threads(self.threads)
                     .fit(data, None);
-                let indices = self.kind.solve(&coreset.points(), self.k);
+                let indices = self
+                    .kind
+                    .solve(&data.subset(coreset.indices().into_iter().copied()), self.k);
                 // reverse the indices to the original data ones
                 coreset.invert_index(&indices)
             }
@@ -254,9 +262,9 @@ where
     M::Item: Clone + Send + Sync,
 {
     type Ancillary = M::Item;
-    fn extract_coreset_points<S: Data<Elem = f32>>(
+    fn extract_coreset_points<D: MetricData>(
         &self,
-        _data: &ArrayBase<S, Ix2>,
+        _data: &D,
         ancillary: Option<&[Self::Ancillary]>,
         assigned: &[usize],
     ) -> Array1<usize> {
@@ -357,21 +365,17 @@ impl PartialOrd for NonNaNF32 {
     }
 }
 
-fn maximum_weight_matching<S: Data<Elem = f32>>(
-    data: &ArrayBase<S, Ix2>,
-    k: usize,
-) -> Array1<usize> {
+fn maximum_weight_matching<D: MetricData>(data: &D, k: usize) -> Array1<usize> {
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
 
     // First, accumulate the distances we might need
-    let sq_norms = compute_sq_norms(data);
-    let max_heap_size = data.nrows() * k;
+    let max_heap_size = data.num_points() * k;
     let mut heap = BinaryHeap::new();
-    for i in 0..data.nrows() {
+    for i in 0..data.num_points() {
         crate::check_signals();
         for j in 0..i {
-            let d = eucl(&data.row(i), &data.row(j), sq_norms[i], sq_norms[j]);
+            let d = data.distance(i, j);
             heap.push((Reverse(NonNaNF32::from(d)), i, j));
             if heap.len() > max_heap_size {
                 heap.pop();
@@ -381,7 +385,7 @@ fn maximum_weight_matching<S: Data<Elem = f32>>(
     let dists = heap.into_sorted_vec();
 
     // Then, compute the matching
-    let mut flags = vec![false; data.nrows()];
+    let mut flags = vec![false; data.num_points()];
     let mut result = Vec::with_capacity(k);
     let mut dists_iter = dists.into_iter();
     while result.len() / 2 < k / 2 {
@@ -406,8 +410,8 @@ fn maximum_weight_matching<S: Data<Elem = f32>>(
 
 /// Runs the local search algorithm on the given data and ancillary information.
 /// The ancillary information is used to enfoce the given matroid constraint.
-fn local_search<A, S, M>(
-    data: &ArrayBase<S, Ix2>,
+fn local_search<A, D: MetricData, M>(
+    data: &D,
     ancillary: &[A],
     k: usize,
     epsilon: f32,
@@ -415,11 +419,10 @@ fn local_search<A, S, M>(
     diversity: DiversityKind,
 ) -> Array1<usize>
 where
-    S: Data<Elem = f32>,
     M: Matroid<Item = A>,
 {
-    if data.nrows() <= k {
-        return Array1::from_iter(0..data.nrows());
+    if data.num_points() <= k {
+        return Array1::from_iter(0..data.num_points());
     }
 
     // Pick an initial arbitrary maximal independent set
@@ -431,20 +434,20 @@ where
 
     while found_improving_swap {
         found_improving_swap = false;
-        let cost = diversity.cost_subset(data, &iset);
+        let cost = diversity.cost_subset(data, iset.iter().copied());
         let threshold = (1.0 + epsilon / k as f32) * cost;
-        for i in 0..data.nrows() {
+        for i in 0..data.num_points() {
             if found_improving_swap {
                 break;
             }
             if iset.contains(&i) {
-                for j in 0..data.nrows() {
+                for j in 0..data.num_points() {
                     if !iset.contains(&j) {
                         iset.remove(&i);
                         iset.insert(j);
 
                         if matroid.is_independent(ancillary, &iset)
-                            && diversity.cost_subset(data, &iset) > threshold
+                            && diversity.cost_subset(data, iset.iter().copied()) > threshold
                         {
                             found_improving_swap = true;
                             break;

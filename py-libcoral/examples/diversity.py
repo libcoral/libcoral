@@ -71,5 +71,6 @@ def load_fashion_mnist():
 
 
 
-main()
+if __name__ == "__main__":
+    main()
 
