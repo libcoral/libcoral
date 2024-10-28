@@ -267,7 +267,7 @@ window.Quarto = {
 <h2 class="anchored" data-anchor-id="diversity-maximization-with-cardinality-constraints">Diversity Maximization with cardinality constraints</h2>
 <p>The most straightforward formulation of the diversity maximization problem requires to find a subset of <span class="math inline">\(k\)</span> points of the input.</p>
 <p>In <code>libcoral</code>, this is achieved by instantiating a <code>DiversityMaximization</code> object, which takes a variety of parameters. In its simplest form, the invocation is the following:</p>
-<div id="5dee6ff0" class="cell" data-execution_count="1">
+<div id="00ff7b1d" class="cell" data-execution_count="1">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> libcoral</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>diversity <span class="op">=</span> libcoral.DiversityMaximization(</span>
@@ -277,7 +277,7 @@ window.Quarto = {
 </div>
 <p>The <code>diversity</code> object then has a <code>solve</code> method that accepts a <code>numpy</code> 2-dimensional array of <code>float32</code> data, where each row is a data point of the set. The <code>solve</code> method returns an array of integers, which are the integers of the rows of the input corresponding to the solution. There is a <code>cost</code> method as well, that returns the cost of any set of points.</p>
 <p>Let’s build a dummy dataset to try out things:</p>
-<div id="0237e5a1" class="cell" data-execution_count="2">
+<div id="af375295" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.datasets <span class="im">import</span> make_blobs</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> matplotlib <span class="im">import</span> pyplot <span class="im">as</span> plt</span>
@@ -318,7 +318,7 @@ window.Quarto = {
 <span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>plt.scatter(data[:,<span class="dv">0</span>], data[:,<span class="dv">1</span>], s<span class="op">=</span><span class="fl">0.5</span>)</span>
 <span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a><span class="co"># Plot the selection of points</span></span>
 <span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>plt.scatter(data[selected_clique,<span class="dv">0</span>], data[selected_clique,<span class="dv">1</span>], s<span class="op">=</span><span class="dv">20</span>, color<span class="op">=</span><span class="st">"red"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div id="f11d2527" class="cell column-page quarto-layout-panel" data-execution_count="3" data-layout-ncol="2">
+<div id="f5271801" class="cell column-page quarto-layout-panel" data-layout-ncol="2" data-execution_count="3">
 <div class="quarto-layout-row">
 <div class="quarto-layout-cell" style="flex-basis: 50.0%;justify-content: center;">
 <p><img src="diversity_files/figure-html/cell-4-output-1.png" class="img-fluid" width="569"></p>
@@ -331,7 +331,7 @@ window.Quarto = {
 <p>As you can see, the two solutions look quite different in terms of position of the points. Oftentimes, the remote-clique solution has points which are grouped in two clusters. This is an effect of the 2-approximation algorithm used to solve it, which is based on finding a maximum-weight matching.</p>
 <p>The code above, especially for the remote-clique problem, has one problem: for large datasets it tends to be quite slow. This is because the approximation algorithm has a high computational complexity.</p>
 <p>To address this problem, <code>libcoral</code> implements the coreset-based approach described in <span class="citation" data-cites="DBLP:journals/pvldb/CeccarelloPPU17">(<a href="#ref-DBLP:journals/pvldb/CeccarelloPPU17" role="doc-biblioref">Ceccarello et al. 2017</a>)</span>. In order to use the coreset-based approach, the instantiation of the <code>DiversityMaximization</code> object requires the additional parameter <code>coreset size</code>:</p>
-<div id="e5dd8edd" class="cell" data-execution_count="4">
+<div id="aec33af8" class="cell" data-execution_count="4">
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>diversity <span class="op">=</span> libcoral.DiversityMaximization(</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="dv">10</span>,</span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">"remote-clique"</span>,</span>
@@ -381,7 +381,7 @@ window.Quarto = {
 <span id="cb5-38"><a href="#cb5-38" aria-hidden="true" tabindex="-1"></a>plt.scatter(results_coreset[<span class="st">"sizes"</span>], results_coreset[<span class="st">"costs"</span>], label<span class="op">=</span><span class="st">"coreset"</span>)</span>
 <span id="cb5-39"><a href="#cb5-39" aria-hidden="true" tabindex="-1"></a>plt.legend()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
-<div id="8294a6ac" class="cell column-page quarto-layout-panel" data-execution_count="5" data-message="false" data-cache="true" data-layout-ncol="2">
+<div id="e5500b31" class="cell column-page quarto-layout-panel" data-layout-ncol="2" data-message="false" data-execution_count="5" data-cache="true">
 <div class="quarto-layout-row">
 <div class="quarto-layout-cell" style="flex-basis: 50.0%;justify-content: center;">
 <p><img src="diversity_files/figure-html/cell-6-output-1.png" class="img-fluid" width="597"></p>
@@ -405,7 +405,7 @@ window.Quarto = {
 </figure>
 </div>
 <p>For the sake of example, we embed the dataset in two dimensions using <a href="https://umap-learn.readthedocs.io/en/latest/">UMAP</a>.</p>
-<div id="7462d9ef" class="cell" data-execution_count="6">
+<div id="8003e1d4" class="cell" data-execution_count="6">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> load_fashion_mnist(seed<span class="op">=</span><span class="va">None</span>, sample_size<span class="op">=</span><span class="va">None</span>):</span>
@@ -462,11 +462,11 @@ window.Quarto = {
 </details>
 </div>
 <p>We define a <em>partition matroid</em> on the categories, requiring that at most one item is picked from each category:</p>
-<div id="89f670d5" class="cell" data-execution_count="7">
+<div id="2604190e" class="cell" data-execution_count="7">
 <div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>partition_matroid <span class="op">=</span> libcoral.MatroidDescription([<span class="dv">1</span>] <span class="op">*</span> <span class="dv">10</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <p>Then we instantiate the algorithm so to find a solution that respects the matroid constraint. Note that we provide the <code>coreset_size</code> parameter: this case it is absolutely required, as the approximation algorithm for Diversity Maximization under matroid constraints is a very expensive local search. The algorithms used in this case are described in <span class="citation" data-cites="DBLP:conf/wsdm/CeccarelloPP18">(<a href="#ref-DBLP:conf/wsdm/CeccarelloPP18" role="doc-biblioref">Ceccarello, Pietracaprina, and Pucci 2018</a>)</span> and <span class="citation" data-cites="DBLP:journals/tkdd/CeccarelloPP20">(<a href="#ref-DBLP:journals/tkdd/CeccarelloPP20" role="doc-biblioref">Ceccarello, Pietracaprina, and Pucci 2020</a>)</span>.</p>
-<div id="2188a06c" class="cell" data-execution_count="8">
+<div id="8213edaf" class="cell" data-execution_count="8">
 <div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>diversity <span class="op">=</span> libcoral.DiversityMaximization(</span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    <span class="dv">10</span>, <span class="co"># how many points we want</span></span>
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">"remote-clique"</span>, <span class="co"># the type of diversity</span></span>
@@ -475,10 +475,10 @@ window.Quarto = {
 <span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <p>To actually solve the problem we now need information about labels along with the data.</p>
-<div id="984e67c1" class="cell" data-execution_count="9">
+<div id="1989f7ae" class="cell" data-execution_count="9">
 <div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>data, categories, embedding <span class="op">=</span> load_fashion_mnist(seed<span class="op">=</span><span class="dv">1234</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
-<div id="79e94587" class="cell" data-execution_count="10">
+<div id="04df4311" class="cell" data-execution_count="10">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>palette <span class="op">=</span> [</span>
@@ -513,7 +513,7 @@ window.Quarto = {
 </div>
 </div>
 <p>We will now select 10 points without matroid constraints.</p>
-<div id="d21b668c" class="cell" data-execution_count="11">
+<div id="22f282e5" class="cell" data-execution_count="11">
 <div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>diversity <span class="op">=</span> libcoral.DiversityMaximization(</span>
 <span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    <span class="dv">10</span>,</span>
 <span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">"remote-clique"</span>,</span>
@@ -523,7 +523,7 @@ window.Quarto = {
 <span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>cost <span class="op">=</span> diversity.cost(embedding[selected])</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <p>Notice that we have more than one point per category. Also note that some of the selected points appear to be outside of their color’s cluster: this is due to the fact that some points are actually far away from other points from the same category.</p>
-<div id="e573a9f1" class="cell" data-execution_count="12">
+<div id="692e241f" class="cell" data-execution_count="12">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>plt.figure(figsize<span class="op">=</span>(<span class="dv">8</span>,<span class="dv">8</span>))</span>
@@ -553,7 +553,7 @@ window.Quarto = {
 <span id="cb12-25"><a href="#cb12-25" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output cell-output-stderr">
-<pre><code>/tmp/ipykernel_128059/2573716032.py:16: UserWarning: The palette list has more values (10) than needed (3), which may not be intended.
+<pre><code>/tmp/ipykernel_41062/2573716032.py:16: UserWarning: The palette list has more values (10) than needed (3), which may not be intended.
   sns.scatterplot(</code></pre>
 </div>
 <div class="cell-output cell-output-display">
@@ -565,7 +565,7 @@ window.Quarto = {
 </div>
 </div>
 <p>Solving the problem with matroid constraints returns a point from each category, as required by the partition matroid constraint.</p>
-<div id="2b5a3939" class="cell" data-execution_count="13">
+<div id="7aa95998" class="cell" data-execution_count="13">
 <div class="sourceCode cell-code" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>diversity <span class="op">=</span> libcoral.DiversityMaximization(</span>
 <span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>    <span class="dv">10</span>,</span>
 <span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">"remote-clique"</span>,</span>
@@ -576,10 +576,10 @@ window.Quarto = {
 <span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>cost <span class="op">=</span> diversity.cost(embedding[selected])</span>
 <span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(categories[selected])</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>[5 0 3 7 8 4 9 1 2 6]</code></pre>
+<pre><code>[0 9 5 7 4 2 8 6 1 3]</code></pre>
 </div>
 </div>
-<div id="951c3ecb" class="cell" data-execution_count="14">
+<div id="f8561c05" class="cell" data-execution_count="14">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="sourceCode cell-code" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>plt.figure(figsize<span class="op">=</span>(<span class="dv">8</span>,<span class="dv">8</span>))</span>
