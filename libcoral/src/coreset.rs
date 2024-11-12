@@ -440,3 +440,20 @@ impl NChunks for () {
         0
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::{metricdata::EuclideanData, test::make_blobs};
+
+    use super::CoresetBuilder;
+
+    /// check that the assignment indices are within the bounds
+    #[test]
+    fn test_assigned_range() {
+        let data = make_blobs(3, 1000, 100, 1.0, 10.0);
+        let data = EuclideanData::new(data);
+        let tau = 1000;
+        let coreset = CoresetBuilder::with_tau(tau).fit(&data, None);
+        assert!(coreset.assignment().iter().all(|i| i < &tau));
+    }
+}
