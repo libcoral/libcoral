@@ -1,10 +1,10 @@
-use std::{array::IntoIter, collections::BTreeSet};
+use std::collections::BTreeSet;
 
 use crate::{
     coreset::{CoresetBuilder, ExtractCoresetPoints, NChunks},
     gmm::{compute_sq_norms, eucl, greedy_minimum_maximum},
     matroid::{Matroid, PartitionMatroid, TransversalMatroid},
-    metricdata::{EuclideanData, MetricData, Subset},
+    metricdata::{MetricData, Subset},
 };
 use ndarray::{prelude::*, Data};
 
@@ -195,15 +195,24 @@ where
     ) -> Array1<usize> {
         if let Some(coreset_size) = self.coreset_size {
             if let Some(matroid) = self.matroid.as_ref() {
+                let extractor = Box::new(MatroidExtractCoresetPoints::new(
+                    self.k,
+                    matroid,
+                    ancillary.unwrap(),
+                ));
                 let coreset = CoresetBuilder::with_tau(coreset_size)
-                    .with_extractor(MatroidExtractCoresetPoints::new(self.k, matroid))
+                    .with_extractor(extractor)
                     .with_threads(self.threads)
-                    .fit(data, ancillary);
+                    .fit(data);
+                let ancillary = ancillary.expect("ancillary data is required with a matroid");
+                let ancillary: Vec<M::Item> = coreset
+                    .indices()
+                    .iter()
+                    .map(|i| ancillary[*i].clone())
+                    .collect();
                 let indices = self.kind.solve_matroid(
                     &data.subset(coreset.indices().into_iter().copied()),
-                    coreset
-                        .ancillary()
-                        .expect("ancillary data is required with a matroid"),
+                    &ancillary,
                     self.k,
                     matroid,
                     self.epsilon,
@@ -212,7 +221,7 @@ where
             } else {
                 let coreset = CoresetBuilder::with_tau(coreset_size)
                     .with_threads(self.threads)
-                    .fit(data, None);
+                    .fit(data);
                 let indices = self
                     .kind
                     .solve(&data.subset(coreset.indices().into_iter().copied()), self.k);
@@ -245,14 +254,19 @@ where
 {
     k: usize,
     matroid: &'matroid M,
+    ground_set: &'matroid [M::Item],
 }
 impl<'matroid, M: Matroid + SelectDelegates<M::Item> + Sync>
     MatroidExtractCoresetPoints<'matroid, M>
 where
     M::Item: Clone + Send + Sync,
 {
-    fn new(k: usize, matroid: &'matroid M) -> Self {
-        Self { k, matroid }
+    fn new(k: usize, matroid: &'matroid M, ground_set: &'matroid [M::Item]) -> Self {
+        Self {
+            k,
+            matroid,
+            ground_set,
+        }
     }
 }
 
@@ -261,15 +275,9 @@ impl<'matroid, M: Matroid + SelectDelegates<M::Item> + Sync> ExtractCoresetPoint
 where
     M::Item: Clone + Send + Sync,
 {
-    type Ancillary = M::Item;
-    fn extract_coreset_points<D: MetricData>(
-        &self,
-        _data: &D,
-        ancillary: Option<&[Self::Ancillary]>,
-        assigned: &[usize],
-    ) -> Array1<usize> {
-        let ancillary = ancillary.expect("ancillary data is required with matroids");
-        self.matroid.select_delegates(self.k, ancillary, assigned)
+    fn extract_coreset_points(&self, _center_idx: usize, assigned: &[usize]) -> Array1<usize> {
+        self.matroid
+            .select_delegates(self.k, self.ground_set, assigned)
     }
 }
 

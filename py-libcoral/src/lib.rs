@@ -21,10 +21,10 @@ trait Callback {
 }
 
 struct CoresetFitCallback<'coreset> {
-    builder: &'coreset CoresetBuilder<(), ()>,
+    builder: &'coreset CoresetBuilder<'coreset>,
 }
 impl<'coreset> Callback for CoresetFitCallback<'coreset> {
-    type Output = FittedCoreset<()>;
+    type Output = FittedCoreset;
 
     fn call<'slf, M: MetricData + NChunks + Subset + Send + 'slf>(
         &'slf self,
@@ -33,7 +33,7 @@ impl<'coreset> Callback for CoresetFitCallback<'coreset> {
     where
         <M as NChunks>::Output<'slf>: MetricData + Send,
     {
-        self.builder.fit(data, None)
+        self.builder.fit(data)
     }
 }
 
@@ -66,8 +66,8 @@ impl Distance {
 ///   Proc. VLDB Endow. 12(7): 766-778 (2019)
 pub struct PyCoreset {
     distance: Distance,
-    builder: CoresetBuilder<(), ()>,
-    fitted: Option<FittedCoreset<()>>,
+    builder: CoresetBuilder<'static>,
+    fitted: Option<FittedCoreset>,
 }
 
 #[pymethods]

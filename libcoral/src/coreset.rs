@@ -1,34 +1,32 @@
 use ndarray::{concatenate, prelude::*, Data};
 
-use crate::metricdata::{EuclideanData, MetricData};
+use crate::metricdata::MetricData;
 
-pub trait WeightCoresetPoints {
-    fn weight_coreset_points<A>(
+pub trait WeightCoresetPoints: Sync + Send {
+    fn weight_coreset_points(
         &self,
         n_coreset_points: usize,
         assignment: &Array1<usize>,
-        ancillary: Option<&[A]>,
     ) -> ArrayD<usize>;
 }
-impl WeightCoresetPoints for () {
-    fn weight_coreset_points<A>(
+
+impl<F: Fn(usize, &Array1<usize>) -> ArrayD<usize> + Sync + Send> WeightCoresetPoints for F {
+    fn weight_coreset_points(
         &self,
-        _n_coreset_points: usize,
-        _assignment: &Array1<usize>,
-        _ancillary: Option<&[A]>,
+        n_coreset_points: usize,
+        assignment: &Array1<usize>,
     ) -> ArrayD<usize> {
-        unreachable!("just to appease the type checker!")
+        self(n_coreset_points, assignment)
     }
 }
 
 #[derive(Clone, Copy)]
 pub struct WeightByCount;
 impl WeightCoresetPoints for WeightByCount {
-    fn weight_coreset_points<A>(
+    fn weight_coreset_points(
         &self,
         n_coreset_points: usize,
         assignment: &Array1<usize>,
-        _ancillary: Option<&[A]>,
     ) -> ArrayD<usize> {
         let mut weights = ArrayD::zeros(IxDyn(&[n_coreset_points]));
         for a in assignment.iter() {
@@ -41,25 +39,14 @@ impl WeightCoresetPoints for WeightByCount {
 /// "extract" the coreset points from the subset pertaining
 /// to the a given center. The function is presented with a slice of
 /// indices into the dataset vectors as well as the (optional) ancillary data.
-pub trait ExtractCoresetPoints {
-    type Ancillary: Clone + Send + Sync;
+pub trait ExtractCoresetPoints: Sync + Send {
     /// Returns an array of indices into the data pointing to the extracted coreset points.
-    fn extract_coreset_points<D: MetricData>(
-        &self,
-        data: &D,
-        ancillary: Option<&[Self::Ancillary]>,
-        assigned: &[usize],
-    ) -> Array1<usize>;
+    fn extract_coreset_points(&self, center_idx: usize, assigned: &[usize]) -> Array1<usize>;
 }
-impl ExtractCoresetPoints for () {
-    type Ancillary = ();
-    fn extract_coreset_points<D: MetricData>(
-        &self,
-        _data: &D,
-        _ancillary: Option<&[Self::Ancillary]>,
-        _assigned: &[usize],
-    ) -> Array1<usize> {
-        unreachable!("just to appease the type checker")
+
+impl<F: Fn(usize, &[usize]) -> Array1<usize> + Sync + Send> ExtractCoresetPoints for F {
+    fn extract_coreset_points(&self, center_idx: usize, assigned: &[usize]) -> Array1<usize> {
+        self(center_idx, assigned)
     }
 }
 
@@ -102,30 +89,18 @@ impl<T: Copy> Compose for ArrayD<T> {
 }
 
 #[derive(Clone)]
-pub struct FittedCoreset<A>
-where
-    A: Clone,
-{
+pub struct FittedCoreset {
     /// the indices _in the original dataset_
     coreset_indices: Array1<usize>,
-    // coreset_points: D,
-    ancillary: Option<Vec<A>>,
     radius: Array1<f32>,
     weights: ArrayD<usize>,
     assignment: Array1<usize>,
 }
 
-impl<A: Clone> FittedCoreset<A> {
-    pub fn ancillary(&self) -> Option<&[A]> {
-        self.ancillary.as_deref()
-    }
-
+impl FittedCoreset {
     pub fn indices(&self) -> ArrayView1<usize> {
         self.coreset_indices.view()
     }
-    // pub fn points(&self) -> ArrayView2<f32> {
-    //     self.coreset_points.view()
-    // }
 
     pub fn radii(&self) -> ArrayView1<f32> {
         self.radius.view()
@@ -148,16 +123,10 @@ impl<A: Clone> FittedCoreset<A> {
     }
 }
 
-impl<A: Clone> Compose for FittedCoreset<A> {
+impl Compose for FittedCoreset {
     fn compose(a: Self, b: Self) -> Self {
-        let ancillary = a
-            .ancillary
-            .zip(b.ancillary)
-            .map(|(a, b)| Compose::compose(a, b));
         Self {
             coreset_indices: Compose::compose(a.coreset_indices, b.coreset_indices),
-            // coreset_points: Compose::compose(a.coreset_points, b.coreset_points),
-            ancillary,
             radius: Compose::compose(a.radius, b.radius),
             weights: Compose::compose(a.weights, b.weights),
             assignment: Compose::compose(a.assignment, b.assignment),
@@ -166,15 +135,15 @@ impl<A: Clone> Compose for FittedCoreset<A> {
 }
 
 // #[derive(Clone)]
-pub struct CoresetBuilder<E: ExtractCoresetPoints, W: WeightCoresetPoints> {
+pub struct CoresetBuilder<'slf> {
     tau: usize,
     threads: usize,
-    weighter: Option<W>,
-    extractor: Option<E>,
+    weighter: Option<Box<dyn WeightCoresetPoints + 'slf>>,
+    extractor: Option<Box<dyn ExtractCoresetPoints + 'slf>>,
 }
 
-impl CoresetBuilder<(), ()> {
-    pub fn with_tau(tau: usize) -> CoresetBuilder<(), ()> {
+impl<'slf> CoresetBuilder<'slf> {
+    pub fn with_tau(tau: usize) -> CoresetBuilder<'slf> {
         Self {
             tau,
             threads: 1,
@@ -184,8 +153,11 @@ impl CoresetBuilder<(), ()> {
     }
 }
 
-impl<E: ExtractCoresetPoints + Sync, W: WeightCoresetPoints + Sync> CoresetBuilder<E, W> {
-    pub fn with_extractor<E2: ExtractCoresetPoints>(self, extractor: E2) -> CoresetBuilder<E2, W> {
+impl<'slf> CoresetBuilder<'slf> {
+    pub fn with_extractor(
+        self,
+        extractor: Box<dyn ExtractCoresetPoints + 'slf>,
+    ) -> CoresetBuilder<'slf> {
         CoresetBuilder {
             tau: self.tau,
             threads: self.threads,
@@ -194,7 +166,10 @@ impl<E: ExtractCoresetPoints + Sync, W: WeightCoresetPoints + Sync> CoresetBuild
         }
     }
 
-    pub fn with_weighter<W2: WeightCoresetPoints>(self, weighter: W2) -> CoresetBuilder<E, W2> {
+    pub fn with_weighter(
+        self,
+        weighter: Box<dyn WeightCoresetPoints + 'slf>,
+    ) -> CoresetBuilder<'slf> {
         CoresetBuilder {
             tau: self.tau,
             threads: self.threads,
@@ -203,36 +178,26 @@ impl<E: ExtractCoresetPoints + Sync, W: WeightCoresetPoints + Sync> CoresetBuild
         }
     }
 
-    pub fn with_threads(self, threads: usize) -> CoresetBuilder<E, W> {
+    pub fn with_threads(self, threads: usize) -> CoresetBuilder<'slf> {
         Self { threads, ..self }
     }
 
     pub fn fit<'data, C: MetricData + Send, D: MetricData + NChunks<Output<'data> = C>>(
         &self,
         data: &'data D,
-        ancillary: Option<&[E::Ancillary]>,
-    ) -> FittedCoreset<E::Ancillary> {
+    ) -> FittedCoreset {
         if self.threads == 1 {
-            self.fit_sequential(data, ancillary)
+            self.fit_sequential(data)
         } else {
-            self.fit_parallel(data, ancillary)
+            self.fit_parallel(data)
         }
     }
 
-    fn fit_sequential<D: MetricData>(
-        &self,
-        data: &D,
-        ancillary: Option<&[E::Ancillary]>,
-    ) -> FittedCoreset<E::Ancillary> {
-        self.fit_sequential_offset(data, ancillary, 0)
+    fn fit_sequential<D: MetricData>(&self, data: &D) -> FittedCoreset {
+        self.fit_sequential_offset(data, 0)
     }
 
-    fn fit_sequential_offset<D: MetricData>(
-        &self,
-        data: &D,
-        ancillary: Option<&[E::Ancillary]>,
-        index_offset: usize,
-    ) -> FittedCoreset<E::Ancillary> {
+    fn fit_sequential_offset<D: MetricData>(&self, data: &D, index_offset: usize) -> FittedCoreset {
         use crate::gmm::*;
 
         let (coreset_points, assignment, radius) = greedy_minimum_maximum(data, self.tau);
@@ -249,7 +214,7 @@ impl<E: ExtractCoresetPoints + Sync, W: WeightCoresetPoints + Sync> CoresetBuild
                         assigned.push(i);
                     }
                 }
-                let extracted = extractor.extract_coreset_points(data, ancillary, &assigned);
+                let extracted = extractor.extract_coreset_points(*c, &assigned);
                 extended_idxs.extend_from_slice(extracted.as_slice().unwrap());
             }
             let extended_idxs = Array1::from_vec(extended_idxs);
@@ -260,23 +225,14 @@ impl<E: ExtractCoresetPoints + Sync, W: WeightCoresetPoints + Sync> CoresetBuild
         };
 
         let weights = if let Some(weighter) = self.weighter.as_ref() {
-            weighter.weight_coreset_points(coreset_indices.len(), &assignment, ancillary)
+            weighter.weight_coreset_points(coreset_indices.len(), &assignment)
         } else {
             weight_by_count(&assignment)
         };
 
-        let coreset_ancillary = ancillary.map(|ancillary| {
-            let mut out = Vec::with_capacity(coreset_indices.len());
-            for i in coreset_indices.iter() {
-                out.push(ancillary[*i].clone());
-            }
-            out
-        });
-
         FittedCoreset {
             // coreset_points: data.subset(&coreset_indices),
             coreset_indices: coreset_indices + index_offset,
-            ancillary: coreset_ancillary,
             radius,
             weights,
             assignment: assignment + index_offset,
@@ -286,22 +242,18 @@ impl<E: ExtractCoresetPoints + Sync, W: WeightCoresetPoints + Sync> CoresetBuild
     fn fit_parallel<'data, D: MetricData + NChunks<Output<'data> = C>, C: MetricData + Send>(
         &self,
         data: &'data D,
-        ancillary: Option<&[E::Ancillary]>,
-    ) -> FittedCoreset<E::Ancillary> {
+    ) -> FittedCoreset {
         let n_chunks = self.threads;
         let chunk_size: usize = data.nchunks_size(n_chunks);
         let chunks = data.nchunks(n_chunks);
-        let ancillary_chunks = ancillary.nchunks(n_chunks);
         let mut out = vec![None; n_chunks];
         std::thread::scope(|scope| {
             let mut handles = Vec::new();
-            for (i, (out, (chunk, ancillary_chunk))) in
-                out.iter_mut().zip(chunks.zip(ancillary_chunks)).enumerate()
-            {
+            for (i, (out, chunk)) in out.iter_mut().zip(chunks).enumerate() {
                 let offset = i * chunk_size;
                 let builder = self;
                 let h = scope.spawn(move || {
-                    out.replace(builder.fit_sequential_offset(&chunk, ancillary_chunk, offset));
+                    out.replace(builder.fit_sequential_offset(&chunk, offset));
                 });
                 handles.push(h);
             }
@@ -453,7 +405,7 @@ mod test {
         let data = make_blobs(3, 1000, 100, 1.0, 10.0);
         let data = EuclideanData::new(data);
         let tau = 1000;
-        let coreset = CoresetBuilder::with_tau(tau).fit(&data, None);
+        let coreset = CoresetBuilder::with_tau(tau).fit(&data);
         assert!(coreset.assignment().iter().all(|i| i < &tau));
     }
 }
