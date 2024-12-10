@@ -282,10 +282,49 @@ impl PyDiversityMaximization {
     }
 }
 
+struct GMMCallback {
+    k: usize,
+}
+impl Callback for GMMCallback {
+    type Output = (Array1<usize>, Array1<usize>, Array1<f32>);
+
+    fn call<'slf, M: MetricData + NChunks + Subset + Send + 'slf>(
+        &'slf self,
+        data: &'slf M,
+    ) -> Self::Output
+    where
+        <M as NChunks>::Output<'slf>: MetricData + Send,
+    {
+        libcoral::gmm::greedy_minimum_maximum(data, self.k)
+    }
+}
+
+#[pyfunction]
+#[pyo3(name="greedy_minimum_maximum", signature = (data, k, distance=Distance::Euclidean))]
+pub fn py_greedy_minimum_maximum(
+    data: PyReadonlyArray2<f32>,
+    k: usize,
+    distance: Distance,
+) -> (
+    Bound<PyArray1<usize>>,
+    Bound<PyArray1<usize>>,
+    Bound<PyArray1<f32>>,
+) {
+    let py = data.py();
+    let callback = GMMCallback { k };
+    let (centers, assignment, radii) = distance.with(data.as_array(), callback);
+    (
+        centers.into_pyarray_bound(py),
+        assignment.into_pyarray_bound(py),
+        radii.into_pyarray_bound(py),
+    )
+}
+
 #[pymodule]
 #[pyo3(name = "libcoral")]
 fn py_libcoral(m: &Bound<'_, PyModule>) -> PyResult<()> {
     pyo3_log::init();
+    m.add_function(wrap_pyfunction!(py_greedy_minimum_maximum, m)?)?;
     m.add_class::<PyCoreset>()?;
     m.add_class::<PyDiversityMaximization>()?;
     m.add_class::<MatroidDescription>()?;
