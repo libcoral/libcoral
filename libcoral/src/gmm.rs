@@ -113,14 +113,30 @@ pub fn assign_closest<D: MetricData>(
 
 #[cfg(test)]
 mod test {
-    use crate::{metricdata::EuclideanData, test::*};
+    use crate::{metricdata::{AngularData, EuclideanData}, test::*};
 
     use super::greedy_minimum_maximum;
 
     #[test]
-    fn test_anticover() {
+    fn test_anticover_euclidean() {
         let data = make_blobs(3, 100, 10, 1.0, 10.0);
         let data = EuclideanData::new(data);
+
+        let mut last_radius = f32::INFINITY;
+
+        for k in 1..100 {
+            let (_centers, _assignment, radii) = greedy_minimum_maximum(&data, k);
+            let radius = radii.into_iter().max_by(f32::total_cmp).unwrap();
+            dbg!(radius);
+            assert!(radius < last_radius);
+            last_radius = radius;
+        }
+    }
+
+    #[test]
+    fn test_anticover_angular() {
+        let data = make_blobs(3, 100, 10, 1.0, 10.0);
+        let data = AngularData::new(data);
 
         let mut last_radius = f32::INFINITY;
 
